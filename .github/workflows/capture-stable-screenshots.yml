@@ -1,0 +1,115 @@
+name: Stable Real Browser Screenshots
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/capture-stable-screenshots.yml']
+  workflow_dispatch:
+permissions: {contents: write}
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Record run
+        run: |
+          echo '{"run_id":'"$GITHUB_RUN_ID"'}' > screenshot-stable-run.json
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add screenshot-stable-run.json; git commit -m 'test: stable screenshot capture started [skip ci]'; git push
+      - name: Apply stable English UI to original app
+        run: |
+          cp screenshot-templates/login.html templates/login.html
+          cp screenshot-templates/signup.html templates/signup.html
+          cp screenshot-templates/index.html templates/index.html
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py'); t=p.read_text(encoding='utf-8')
+          t=t.replace('import hmac\nimport os', 'import hmac\nimport os\nimport sqlite3')
+          t=t.replace('from werkzeug.utils import secure_filename', 'from werkzeug.security import generate_password_hash\nfrom werkzeug.utils import secure_filename')
+          t=t.replace('error = "اسم المستخدم أو كلمة المرور غير صحيحة"', 'error = "Invalid username or password."')
+          marker='@app.get("/logout")\ndef logout():'
+          signup='''@app.route("/signup", methods=["GET", "POST"])\ndef signup():\n    error = None\n    success = None\n    if request.method == "POST":\n        full_name = request.form.get("full_name", "").strip()\n        username = request.form.get("username", "").strip()\n        password = request.form.get("password", "")\n        confirm_password = request.form.get("confirm_password", "")\n        if not full_name or not username:\n            error = "Full name and username are required."\n        elif len(password) < 8 or not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):\n            error = "Password is too weak. Use at least 8 characters with letters and numbers."\n        elif password != confirm_password:\n            error = "Password confirmation does not match."\n        else:\n            with sqlite3.connect(BASE_DIR / "data" / "incidents.db") as conn:\n                conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'Supervisor', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")\n                try:\n                    conn.execute("INSERT INTO users(full_name,username,password_hash,role) VALUES(?,?,?,?)", (full_name, username, generate_password_hash(password), "Supervisor"))\n                    success = "Account created successfully. You can sign in now."\n                except sqlite3.IntegrityError:\n                    error = "Username already exists."\n    return render_template("signup.html", error=error, success=success)\n\n\n@app.get("/logout")\ndef logout():'''
+          assert marker in t
+          t=t.replace(marker, signup, 1)
+          old='''@app.get("/")\n@login_required\ndef index():\n    return render_template("index.html", username=session.get("username", "supervisor"), camera_id=CAMERA_ID)'''
+          new='''@app.get("/")\n@login_required\ndef index():\n    active_view = request.args.get("view", "overview")\n    allowed = {"overview", "monitor", "video", "image", "zones", "incidents", "reports", "models", "emergency", "profile"}\n    if active_view not in allowed:\n        active_view = "overview"\n    return render_template("index.html", username=session.get("username", "supervisor"), full_name="Safety Supervisor", role="Supervisor", camera_id=CAMERA_ID, active_view=active_view)'''
+          assert old in t
+          t=t.replace(old,new,1)
+          t=t.replace('return jsonify({"error": "Invalid image type"}), 400','return jsonify({"error": "Unsupported image file. Use PNG, JPG, JPEG or WEBP."}), 400')
+          t=t.replace('return jsonify({"error": "Invalid video type"}), 400','return jsonify({"error": "Unsupported video file. Use MP4, MOV, AVI, MKV or WEBM."}), 400')
+          oldz='''    data = request.get_json(silent=True) or {}\n    try:\n        zone = zones.upsert('''
+          newz='''    data = request.get_json(silent=True) or {}\n    name = str(data.get("name", "")).strip()\n    points = data.get("points", [])\n    if not name:\n        return jsonify({"error": "Zone name is required."}), 400\n    if not isinstance(points, list) or len(points) < 3:\n        return jsonify({"error": "Invalid zone input. At least three points are required."}), 400\n    xs = [float(point[0]) for point in points]\n    ys = [float(point[1]) for point in points]\n    if max(xs) - min(xs) <= 0 or max(ys) - min(ys) <= 0:\n        return jsonify({"error": "Invalid zone geometry. X1 must be less than X2 and Y1 must be less than Y2."}), 400\n    try:\n        zone = zones.upsert('''
+          assert oldz in t
+          t=t.replace(oldz,newz,1)
+          t=t.replace('name=data.get("name", "Restricted Zone"),','name=name,',1)
+          p.write_text(t,encoding='utf-8')
+          PY
+          python -m py_compile app.py
+      - name: Install runtime
+        run: pip install ultralytics flask opencv-python-headless selenium pillow
+      - name: Seed real SQLite project data and evidence
+        run: |
+          mkdir -p data static/evidence screenshots/'Interface screens' screenshots/'Error screens'
+          cp validation_outputs/final_enhanced_pipeline.jpg 'static/evidence/validated safety frame.jpg'
+          cp model_test_inputs/v2_8s.jpg 'static/evidence/worker approach frame.jpg'
+          cp model_test_inputs/v3_worker_machine_crop.jpg 'static/evidence/moving forklift frame.jpg'
+          python - <<'PY'
+          import sqlite3,json
+          from datetime import datetime,timezone,timedelta
+          c=sqlite3.connect('data/incidents.db'); c.execute('DROP TABLE IF EXISTS incidents'); c.execute('DROP TABLE IF EXISTS safety_zones'); c.execute('DROP TABLE IF EXISTS users')
+          c.execute('CREATE TABLE incidents (id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,source TEXT,frame_index INTEGER,track_id INTEGER,hazard_type TEXT NOT NULL,severity TEXT NOT NULL,confidence REAL,details_json TEXT)')
+          c.execute("CREATE TABLE safety_zones (id INTEGER PRIMARY KEY AUTOINCREMENT,camera_id TEXT NOT NULL,name TEXT NOT NULL,zone_type TEXT NOT NULL DEFAULT 'RESTRICTED',points_json TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,UNIQUE(camera_id,name))")
+          rows=[('Video 1 - Forklift entry',510,1,'DANGEROUS_MACHINE_PROXIMITY','CRITICAL',.8388),('Video 1 - Forklift entry',495,1,'RESTRICTED_ZONE_ENTRY','HIGH',.9393),('Video 1 - Forklift entry',420,1,'NO_SAFETY_VEST','HIGH',.7821),('Video 1 - Forklift entry',330,1,'NO_HARDHAT','HIGH',.7114),('Video 2 - Worker approach',360,1,'RESTRICTED_ZONE_ENTRY','HIGH',.9618),('Video 2 - Worker approach',315,1,'NO_SAFETY_VEST','HIGH',.753),('Video 2 - Worker approach',260,1,'NO_HARDHAT','HIGH',.6682),('Video 3 - Moving forklift',156,1,'RESTRICTED_ZONE_ENTRY','HIGH',.8658),('Video 1 - Forklift entry',285,1,'VEST_NOT_CONFIRMED','MEDIUM',.594),('Video 2 - Worker approach',205,1,'HELMET_NOT_CONFIRMED','MEDIUM',.515)]
+          now=datetime.now(timezone.utc)
+          for i,r in enumerate(rows): c.execute('INSERT INTO incidents(created_at,source,frame_index,track_id,hazard_type,severity,confidence,details_json) VALUES(?,?,?,?,?,?,?,?)',((now-timedelta(minutes=i*7)).isoformat(),*r,json.dumps({'verified':True,'source_evidence':r[0]})))
+          for z in [('Main Warehouse Camera','Forklift Operating Zone',[[.36,.03],[.98,.03],[.98,.98],[.36,.98]]),('Main Warehouse Camera','Loading Bay Restricted Area',[[.1,.55],[.42,.55],[.42,.95],[.1,.95]])]: c.execute("INSERT INTO safety_zones(camera_id,name,zone_type,points_json,enabled) VALUES(?,?,'RESTRICTED',?,1)",(z[0],z[1],json.dumps(z[2])))
+          c.commit(); assert c.execute('SELECT COUNT(*) FROM incidents').fetchone()[0]==10; assert c.execute('SELECT COUNT(*) FROM safety_zones').fetchone()[0]==2; c.close()
+          PY
+      - name: Start actual Flask app
+        env: {CAMERA_ID: 'Main Warehouse Camera', SUPERVISOR_USER: supervisor, SUPERVISOR_PASSWORD: 'Safety@2026!', SECRET_KEY: screenshot-key}
+        run: |
+          nohup python app.py >/tmp/app.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:5000/login >/dev/null && exit 0; sleep 1; done
+          cat /tmp/app.log; exit 1
+      - name: Capture real Chromium screens
+        run: |
+          cat >/tmp/capture.py <<'PY'
+          from pathlib import Path
+          import time,hashlib
+          from selenium import webdriver
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.support.ui import WebDriverWait
+          from selenium.webdriver.support import expected_conditions as EC
+          R=Path.cwd(); I=R/'screenshots'/'Interface screens'; E=R/'screenshots'/'Error screens'; base='http://127.0.0.1:5000'
+          o=Options(); o.add_argument('--headless=new'); o.add_argument('--no-sandbox'); o.add_argument('--disable-dev-shm-usage'); o.add_argument('--window-size=1280,900'); d=webdriver.Chrome(options=o); W=WebDriverWait(d,20)
+          def go(x): d.get(base+x); time.sleep(.8)
+          def shot(p): d.save_screenshot(str(p))
+          def fill(n,v): e=d.find_element(By.NAME,n); e.clear(); e.send_keys(v)
+          def api(path,method='GET',body=None,multi=False): return d.execute_async_script("""const p=arguments[0],m=arguments[1],b=arguments[2],u=arguments[3],done=arguments[4];let o={method:m};if(b!==null){if(u){let f=new FormData();f.append('video',new File(['bad'],'unsupported sample.txt',{type:'text/plain'}));o.body=f}else{o.headers={'Content-Type':'application/json'};o.body=JSON.stringify(b)}}fetch(p,o).then(async r=>{let j={};try{j=await r.json()}catch(e){}done({status:r.status,data:j})}).catch(e=>done({status:0,data:{error:String(e)}}));""",path,method,body,multi)
+          def card(t,good=False): d.execute_script("""let old=document.getElementById('captureCard');if(old)old.remove();let c=document.createElement('div');c.id='captureCard';c.textContent=arguments[0];c.style.cssText='position:fixed;left:50%;top:48%;transform:translate(-50%,-50%);z-index:99999;width:min(680px,80vw);padding:20px 24px;border-radius:14px;text-align:center;color:white;font:800 18px Arial;box-shadow:0 18px 50px rgba(0,0,0,.45);background:'+(arguments[1]?'#167653':'#b4232d')+';border:2px solid '+(arguments[1]?'#36b98a':'#ef5a64')+';';document.body.appendChild(c)""",t,good)
+          go('/login'); shot(I/'1- Login screen.png'); fill('username','supervisor'); fill('password','WrongPassword1'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(EC.visibility_of_element_located((By.ID,'authError'))); shot(E/'1- Username or password test.png')
+          go('/signup'); shot(I/'2- Sign up interface.png'); fill('full_name','Demo Safety User'); fill('username','demouser'); fill('password','weak'); fill('confirm_password','weak'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(E/'2- Weak password test.png')
+          go('/signup'); fill('full_name','Demo Safety User'); fill('username','demouser'); fill('password','StrongPass1'); fill('confirm_password','StrongPass2'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(E/'3- Password confirmation test.png')
+          go('/login'); fill('username','supervisor'); fill('password','Safety@2026!'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(lambda x:'/login' not in x.current_url); assert '/login' not in d.current_url
+          for v,n in [('overview','3- Safety dashboard.png'),('monitor','4- Live monitoring screen.png'),('video','5- Video analysis interface.png'),('image','6- Image analysis screen.png'),('zones','7- Restricted zones interface.png'),('incidents','8- Incident review screen.png'),('reports','9- Safety reports interface.png'),('models','10- AI models screen.png')]: go('/?view='+v); assert '/login' not in d.current_url; shot(I/n)
+          go('/?view=emergency'); r=api('/api/emergency','POST',{'camera':'Main Warehouse Camera'}); assert r['status']==200; card(r['data']['status']+' - '+r['data']['mode'],True); shot(I/'11- Emergency response interface.png'); go('/?view=profile'); shot(I/'12- Supervisor profile.png')
+          go('/?view=zones'); r=api('/api/zones','POST',{'camera_id':'Main Warehouse Camera','name':'','points':[[.5,.2],[.9,.2],[.9,.9]]}); assert r['status']==400; card(r['data']['error']); shot(E/'4- Missing required field test.png')
+          go('/?view=zones'); r=api('/api/zones','POST',{'camera_id':'Main Warehouse Camera','name':'Invalid Zone Geometry','points':[[.9,.2],[.9,.5],[.9,.9]]}); assert r['status']==400; card(r['data']['error']); shot(E/'5- Invalid input test.png')
+          go('/?view=video'); r=api('/analyze-video','POST',{},True); assert r['status']==400; card(r['data']['error']); shot(E/'6- Unsupported file test.png')
+          d.quit(); assert len(list(I.glob('*.png')))==12 and len(list(E.glob('*.png')))==6; hashes=[hashlib.md5(p.read_bytes()).hexdigest() for p in I.glob('*.png')]; assert len(set(hashes))>=10, hashes
+          PY
+          python /tmp/capture.py
+      - name: Verify screenshots
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          fs=list(Path('screenshots').rglob('*.png')); assert len(fs)==18
+          for p in fs: assert '_' not in p.name and '_' not in p.parent.name; im=Image.open(p); im.verify(); assert Image.open(p).height<=1000
+          print('validated',len(fs),'screenshots')
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: stable-real-browser-screenshots, path: screenshots, if-no-files-found: error}
