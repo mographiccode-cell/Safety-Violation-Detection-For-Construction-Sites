@@ -1,0 +1,20 @@
+{
+  "project": "Smart Workplace Safety",
+  "status": "CLOSED",
+  "closure_date": "2026-08-18",
+  "final_validation_run_id": 32145767643,
+  "final_validation_status": "PASS",
+  "final_validation_evidence_commit": "665a853ab556873c3d554e49079ce8903301ac63",
+  "final_pipeline": "TiledEquipmentCombinedPipeline",
+  "inference_identity": "REAL_SAFETY_ENSEMBLE_PLUS_TSSTG_ACTION",
+  "authoritative_report": "docs/FINAL_CLOSURE_REPORT.md",
+  "functional_matrix": "validation_outputs/final_functional_matrix.json",
+  "validation_marker": "validation_outputs/final_validation_status.json",
+  "original_video_evidence": "PASS",
+  "action_recognition": "PASS_REAL_YOLO_POSE_PLUS_TSSTG_30_FRAME",
+  "deployment_scope_notes": {
+    "live_camera": "Software live loop is complete; physical E2E requires a configured webcam or RTSP camera source.",
+    "emergency": "Application-level emergency response simulation only; no PLC/forklift physical shutdown is claimed.",
+    "distance": "Pixels only until camera calibration and ground-plane homography are configured."
+  }
+}
