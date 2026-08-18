@@ -1,16 +1,18 @@
 {
   "v2_8s.jpg": {
     "best_pt": {
-      "status": "error",
-      "count": 0,
-      "classes": [],
-      "error": "IndexError: list index out of range"
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "fall_hazard"
+      ],
+      "error": null
     },
     "yolo26n_ppe": {
-      "status": "error",
+      "status": "ok",
       "count": 0,
       "classes": [],
-      "error": "IndexError: list index out of range"
+      "error": null
     }
   }
 }

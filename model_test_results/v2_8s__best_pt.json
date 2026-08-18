@@ -2,7 +2,7 @@
   "model_tag": "best_pt",
   "model_path": "best.pt",
   "image": "v2_8s.jpg",
-  "status": "error",
+  "status": "ok",
   "names": {
     "0": "construction-machine",
     "1": "fall_hazard",
@@ -16,7 +16,21 @@
     "9": "unsafe_ladder_use",
     "10": "unsecure- electricalwires"
   },
-  "detections": [],
-  "error": "IndexError: list index out of range",
-  "traceback": "Traceback (most recent call last):\n  File \"<stdin>\", line 28, in <module>\nIndexError: list index out of range\n"
+  "detections": [
+    {
+      "class_id": 1,
+      "class_name": "fall_hazard",
+      "confidence": 0.638052,
+      "xyxy": [
+        72.606,
+        35.817,
+        168.649,
+        106.377
+      ]
+    }
+  ],
+  "image_shape": [
+    108,
+    192
+  ]
 }
