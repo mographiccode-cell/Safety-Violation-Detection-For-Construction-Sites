@@ -1,1 +1,1 @@
-run real TSSTG end-to-end source-video validation attempt 3
+run compact real TSSTG validation on pose_test1 attempt 4
