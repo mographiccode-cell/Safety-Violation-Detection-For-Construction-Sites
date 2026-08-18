@@ -48,11 +48,17 @@ jobs:
           cp validation_outputs/final_enhanced_pipeline.jpg static/evidence/validation.jpg
           cp model_test_inputs/v2_8s.jpg static/evidence/video-two.jpg
           cp model_test_inputs/v3_worker_machine_crop.jpg static/evidence/video-three.jpg
-          ffmpeg -hide_banner -loglevel error -y -loop 1 -i static/evidence/video-one.jpg -t 2 -vf 'scale=1280:-2' -r 2 -pix_fmt yuv420p static/evidence/video-one.mp4
           python - <<'PY'
-          import sqlite3, json
+          import cv2, sqlite3, json
           from pathlib import Path
           from datetime import datetime, timezone, timedelta
+          img=cv2.imread('static/evidence/video-one.jpg')
+          assert img is not None
+          h,w=img.shape[:2]
+          writer=cv2.VideoWriter('static/evidence/video-one.mp4',cv2.VideoWriter_fourcc(*'mp4v'),2.0,(w,h))
+          for _ in range(4): writer.write(img)
+          writer.release()
+          assert Path('static/evidence/video-one.mp4').stat().st_size > 1000
           db=Path('data/incidents.db')
           conn=sqlite3.connect(db)
           conn.execute('DROP TABLE IF EXISTS incidents')
@@ -60,28 +66,12 @@ jobs:
           conn.execute('CREATE TABLE incidents (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, source TEXT, frame_index INTEGER, track_id INTEGER, hazard_type TEXT NOT NULL, severity TEXT NOT NULL, confidence REAL, details_json TEXT)')
           conn.execute("CREATE TABLE safety_zones (id INTEGER PRIMARY KEY AUTOINCREMENT, camera_id TEXT NOT NULL, name TEXT NOT NULL, zone_type TEXT NOT NULL DEFAULT 'RESTRICTED', points_json TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, UNIQUE(camera_id,name))")
           rows=[
-          ('Video 1 - Forklift entry',510,1,'DANGEROUS_MACHINE_PROXIMITY','CRITICAL',0.8388),
-          ('Video 1 - Forklift entry',495,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9393),
-          ('Video 1 - Forklift entry',420,1,'NO_SAFETY_VEST','HIGH',0.7821),
-          ('Video 1 - Forklift entry',330,1,'NO_HARDHAT','HIGH',0.7114),
-          ('Video 2 - Worker approach',360,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9618),
-          ('Video 2 - Worker approach',315,1,'NO_SAFETY_VEST','HIGH',0.7530),
-          ('Video 2 - Worker approach',260,1,'NO_HARDHAT','HIGH',0.6682),
-          ('Video 3 - Moving forklift',156,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.8658),
-          ('Video 1 - Forklift entry',285,1,'VEST_NOT_CONFIRMED','MEDIUM',0.5940),
-          ('Video 2 - Worker approach',205,1,'HELMET_NOT_CONFIRMED','MEDIUM',0.5150)]
+          ('Video 1 - Forklift entry',510,1,'DANGEROUS_MACHINE_PROXIMITY','CRITICAL',0.8388),('Video 1 - Forklift entry',495,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9393),('Video 1 - Forklift entry',420,1,'NO_SAFETY_VEST','HIGH',0.7821),('Video 1 - Forklift entry',330,1,'NO_HARDHAT','HIGH',0.7114),('Video 2 - Worker approach',360,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9618),('Video 2 - Worker approach',315,1,'NO_SAFETY_VEST','HIGH',0.7530),('Video 2 - Worker approach',260,1,'NO_HARDHAT','HIGH',0.6682),('Video 3 - Moving forklift',156,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.8658),('Video 1 - Forklift entry',285,1,'VEST_NOT_CONFIRMED','MEDIUM',0.5940),('Video 2 - Worker approach',205,1,'HELMET_NOT_CONFIRMED','MEDIUM',0.5150)]
           now=datetime.now(timezone.utc)
-          for i,row in enumerate(rows):
-              conn.execute('INSERT INTO incidents(created_at,source,frame_index,track_id,hazard_type,severity,confidence,details_json) VALUES(?,?,?,?,?,?,?,?)',((now-timedelta(minutes=i*7)).isoformat(),*row,json.dumps({'verified':True,'source_evidence':row[0]})))
-          zones=[
-          ('Main Warehouse Camera','Forklift Operating Zone','RESTRICTED',[[0.36,0.03],[0.98,0.03],[0.98,0.98],[0.36,0.98]],1),
-          ('Main Warehouse Camera','Loading Bay Restricted Area','RESTRICTED',[[0.10,0.55],[0.42,0.55],[0.42,0.95],[0.10,0.95]],1)]
-          for z in zones:
-              conn.execute('INSERT INTO safety_zones(camera_id,name,zone_type,points_json,enabled) VALUES(?,?,?,?,?)',(z[0],z[1],z[2],json.dumps(z[3]),z[4]))
-          conn.commit()
-          assert conn.execute('SELECT COUNT(*) FROM incidents').fetchone()[0] == 10
-          assert conn.execute('SELECT COUNT(*) FROM safety_zones').fetchone()[0] == 2
-          conn.close()
+          for i,row in enumerate(rows): conn.execute('INSERT INTO incidents(created_at,source,frame_index,track_id,hazard_type,severity,confidence,details_json) VALUES(?,?,?,?,?,?,?,?)',((now-timedelta(minutes=i*7)).isoformat(),*row,json.dumps({'verified':True,'source_evidence':row[0]})))
+          zones=[('Main Warehouse Camera','Forklift Operating Zone','RESTRICTED',[[0.36,0.03],[0.98,0.03],[0.98,0.98],[0.36,0.98]],1),('Main Warehouse Camera','Loading Bay Restricted Area','RESTRICTED',[[0.10,0.55],[0.42,0.55],[0.42,0.95],[0.10,0.95]],1)]
+          for z in zones: conn.execute('INSERT INTO safety_zones(camera_id,name,zone_type,points_json,enabled) VALUES(?,?,?,?,?)',(z[0],z[1],z[2],json.dumps(z[3]),z[4]))
+          conn.commit(); assert conn.execute('SELECT COUNT(*) FROM incidents').fetchone()[0] == 10; assert conn.execute('SELECT COUNT(*) FROM safety_zones').fetchone()[0] == 2; conn.close()
           PY
 
       - name: Start actual Flask application
@@ -109,33 +99,27 @@ jobs:
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.support.ui import WebDriverWait
           from selenium.webdriver.support import expected_conditions as EC
-
           root=Path.cwd(); inter=root/'screenshots'/'Interface screens'; err=root/'screenshots'/'Error screens'
           sample=root/'unsupported sample.txt'; sample.write_text('unsupported video file',encoding='utf-8')
           o=Options(); o.add_argument('--headless=new'); o.add_argument('--no-sandbox'); o.add_argument('--disable-dev-shm-usage'); o.add_argument('--window-size=1280,900')
           driver=webdriver.Chrome(options=o); wait=WebDriverWait(driver,20); base='http://127.0.0.1:5000'
           def shot(path): driver.save_screenshot(str(path))
           def go(url): driver.get(url); time.sleep(0.8)
-
           go(base+'/login'); shot(inter/'1- Login screen.png')
           driver.find_element(By.NAME,'username').send_keys('supervisor'); driver.find_element(By.NAME,'password').send_keys('WrongPassword1'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'authError'))); shot(err/'1- Username or password test.png')
           go(base+'/signup'); shot(inter/'2- Sign up interface.png')
           driver.find_element(By.NAME,'full_name').send_keys('Demo Safety User'); driver.find_element(By.NAME,'username').send_keys('demouser'); driver.find_element(By.NAME,'password').send_keys('weak'); driver.find_element(By.NAME,'confirm_password').send_keys('weak'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(err/'2- Weak password test.png')
           go(base+'/signup'); driver.find_element(By.NAME,'full_name').send_keys('Demo Safety User'); driver.find_element(By.NAME,'username').send_keys('demouser'); driver.find_element(By.NAME,'password').send_keys('StrongPass1'); driver.find_element(By.NAME,'confirm_password').send_keys('StrongPass2'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(err/'3- Password confirmation test.png')
           go(base+'/login'); driver.find_element(By.NAME,'username').send_keys('supervisor'); driver.find_element(By.NAME,'password').send_keys('Safety@2026!'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); time.sleep(1)
-          views=[('overview','3- Safety dashboard.png'),('monitor','4- Live monitoring screen.png'),('video','5- Video analysis interface.png'),('image','6- Image analysis screen.png'),('zones','7- Restricted zones interface.png'),('incidents','8- Incident review screen.png'),('reports','9- Safety reports interface.png'),('models','10- AI models screen.png')]
-          for v,n in views:
-              go(base+'/?view='+v)
-              if v=='models': driver.execute_script("document.body.style.zoom='0.92'")
-              shot(inter/n)
+          for v,n in [('overview','3- Safety dashboard.png'),('monitor','4- Live monitoring screen.png'),('video','5- Video analysis interface.png'),('image','6- Image analysis screen.png'),('zones','7- Restricted zones interface.png'),('incidents','8- Incident review screen.png'),('reports','9- Safety reports interface.png'),('models','10- AI models screen.png')]:
+              go(base+'/?view='+v); shot(inter/n)
           go(base+'/?view=emergency'); driver.find_element(By.ID,'emergencyBtn').click(); wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR,'#emergencyStatus .success-card'))); shot(inter/'11- Emergency response interface.png')
           go(base+'/?view=profile'); shot(inter/'12- Supervisor profile.png')
           go(base+'/?view=zones'); driver.find_element(By.ID,'zoneName').clear(); driver.find_element(By.ID,'saveZone').click(); wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR,'#zoneError .alert-error'))); shot(err/'4- Missing required field test.png')
           driver.find_element(By.ID,'zoneName').send_keys('Invalid Zone Geometry'); driver.find_element(By.ID,'zoneX1').clear(); driver.find_element(By.ID,'zoneX1').send_keys('90'); driver.find_element(By.ID,'zoneX2').clear(); driver.find_element(By.ID,'zoneX2').send_keys('20'); driver.find_element(By.ID,'saveZone').click(); wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR,'#zoneError .alert-error'))); shot(err/'5- Invalid input test.png')
           go(base+'/?view=video'); driver.find_element(By.ID,'videoFile').send_keys(str(sample)); driver.find_element(By.CSS_SELECTOR,'#videoForm button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR,'#videoError .alert-error'))); shot(err/'6- Unsupported file test.png')
           driver.quit(); sample.unlink(missing_ok=True)
-          assert len(list(inter.glob('*.png'))) == 12
-          assert len(list(err.glob('*.png'))) == 6
+          assert len(list(inter.glob('*.png'))) == 12; assert len(list(err.glob('*.png'))) == 6
           PY
           python /tmp/capture.py
 
@@ -144,13 +128,10 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           from PIL import Image
-          root=Path('screenshots')
-          files=list(root.rglob('*.png'))
-          assert len(files)==18
+          files=list(Path('screenshots').rglob('*.png')); assert len(files)==18
           for p in files:
               assert '_' not in p.name and '_' not in p.parent.name
-              im=Image.open(p); im.verify(); im=Image.open(p)
-              assert im.height <= 1000, (p, im.size)
+              im=Image.open(p); im.verify(); im=Image.open(p); assert im.height <= 1000, (p, im.size)
           print('validated',len(files),'real browser screenshots')
           PY
 
