@@ -1,0 +1,21 @@
+{
+  "model_tag": "prodbykosta_ppe",
+  "model_path": "models/candidates/prodbykosta_ppe_best.pt",
+  "image": "v3_worker_machine_crop.jpg",
+  "status": "ok",
+  "detections": [],
+  "names": {
+    "0": "Boots",
+    "1": "Ear-protection",
+    "2": "Glass",
+    "3": "Glove",
+    "4": "Helmet",
+    "5": "Mask",
+    "6": "Person",
+    "7": "Vest"
+  },
+  "image_shape": [
+    170,
+    148
+  ]
+}

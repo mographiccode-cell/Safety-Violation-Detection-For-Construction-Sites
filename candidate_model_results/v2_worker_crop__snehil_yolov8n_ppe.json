@@ -1,0 +1,68 @@
+{
+  "model_tag": "snehil_yolov8n_ppe",
+  "model_path": "models/candidates/snehil_yolov8n_ppe_best.pt",
+  "image": "v2_worker_crop.jpg",
+  "status": "ok",
+  "detections": [
+    {
+      "class_id": 0,
+      "class_name": "Hardhat",
+      "confidence": 0.827675,
+      "xyxy": [
+        89.699,
+        20.69,
+        143.584,
+        54.118
+      ]
+    },
+    {
+      "class_id": 5,
+      "class_name": "Person",
+      "confidence": 0.590564,
+      "xyxy": [
+        3.432,
+        42.593,
+        272.151,
+        320.0
+      ]
+    },
+    {
+      "class_id": 3,
+      "class_name": "NO-Mask",
+      "confidence": 0.445136,
+      "xyxy": [
+        89.6,
+        51.843,
+        99.572,
+        66.551
+      ]
+    },
+    {
+      "class_id": 5,
+      "class_name": "Person",
+      "confidence": 0.238172,
+      "xyxy": [
+        182.683,
+        216.432,
+        275.922,
+        320.0
+      ]
+    }
+  ],
+  "names": {
+    "0": "Hardhat",
+    "1": "Mask",
+    "2": "NO-Hardhat",
+    "3": "NO-Mask",
+    "4": "NO-Safety Vest",
+    "5": "Person",
+    "6": "Safety Cone",
+    "7": "Safety Vest",
+    "8": "machinery",
+    "9": "vehicle"
+  },
+  "image_shape": [
+    320,
+    276
+  ]
+}

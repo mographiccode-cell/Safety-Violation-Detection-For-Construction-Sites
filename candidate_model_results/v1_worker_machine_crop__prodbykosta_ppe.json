@@ -1,0 +1,44 @@
+{
+  "model_tag": "prodbykosta_ppe",
+  "model_path": "models/candidates/prodbykosta_ppe_best.pt",
+  "image": "v1_worker_machine_crop.jpg",
+  "status": "ok",
+  "detections": [
+    {
+      "class_id": 4,
+      "class_name": "Helmet",
+      "confidence": 0.593955,
+      "xyxy": [
+        85.671,
+        21.475,
+        148.784,
+        54.563
+      ]
+    },
+    {
+      "class_id": 6,
+      "class_name": "Person",
+      "confidence": 0.250005,
+      "xyxy": [
+        61.251,
+        16.417,
+        180.865,
+        250.0
+      ]
+    }
+  ],
+  "names": {
+    "0": "Boots",
+    "1": "Ear-protection",
+    "2": "Glass",
+    "3": "Glove",
+    "4": "Helmet",
+    "5": "Mask",
+    "6": "Person",
+    "7": "Vest"
+  },
+  "image_shape": [
+    250,
+    242
+  ]
+}

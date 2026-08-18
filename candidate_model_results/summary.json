@@ -1,0 +1,142 @@
+{
+  "v1_worker_machine_crop.jpg": {
+    "prodbykosta_ppe": {
+      "status": "ok",
+      "count": 2,
+      "classes": [
+        "Helmet",
+        "Person"
+      ],
+      "confidences": [
+        0.593955,
+        0.250005
+      ],
+      "error": null
+    },
+    "prodbykosta_person": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "person"
+      ],
+      "confidences": [
+        0.302395
+      ],
+      "error": null
+    },
+    "snehil_yolov8n_ppe": {
+      "status": "ok",
+      "count": 5,
+      "classes": [
+        "machinery",
+        "Hardhat",
+        "Person",
+        "machinery",
+        "Safety Vest"
+      ],
+      "confidences": [
+        0.732309,
+        0.629109,
+        0.472565,
+        0.180568,
+        0.160294
+      ],
+      "error": null
+    }
+  },
+  "v2_8s.jpg": {
+    "prodbykosta_ppe": {
+      "status": "ok",
+      "count": 0,
+      "classes": [],
+      "confidences": [],
+      "error": null
+    },
+    "prodbykosta_person": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "horse"
+      ],
+      "confidences": [
+        0.37605
+      ],
+      "error": null
+    },
+    "snehil_yolov8n_ppe": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "Hardhat"
+      ],
+      "confidences": [
+        0.830826
+      ],
+      "error": null
+    }
+  },
+  "v2_worker_crop.jpg": {
+    "prodbykosta_ppe": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "Person"
+      ],
+      "confidences": [
+        0.727408
+      ],
+      "error": null
+    },
+    "prodbykosta_person": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "horse"
+      ],
+      "confidences": [
+        0.786232
+      ],
+      "error": null
+    },
+    "snehil_yolov8n_ppe": {
+      "status": "ok",
+      "count": 4,
+      "classes": [
+        "Hardhat",
+        "Person",
+        "NO-Mask",
+        "Person"
+      ],
+      "confidences": [
+        0.827675,
+        0.590564,
+        0.445136,
+        0.238172
+      ],
+      "error": null
+    }
+  },
+  "v3_worker_machine_crop.jpg": {
+    "prodbykosta_ppe": {
+      "status": "ok",
+      "count": 0,
+      "classes": [],
+      "confidences": [],
+      "error": null
+    },
+    "prodbykosta_person": {
+      "status": "ok",
+      "count": 0,
+      "classes": [],
+      "confidences": [],
+      "error": null
+    },
+    "snehil_yolov8n_ppe": {
+      "status": "ok",
+      "count": 0,
+      "classes": [],
+      "confidences": [],
+      "error": null
+    }
+  }
+}
