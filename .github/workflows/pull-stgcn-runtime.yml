@@ -1,0 +1,39 @@
+name: Pull TSSTG Runtime From GitHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'stgcn-runtime-pull-trigger.txt'
+      - '.github/workflows/pull-stgcn-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone TSSTG source repository
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/stgcn-src
+          git clone --depth 1 https://github.com/Bigtuo/YOLOv7-Pose-Bytetrack-STGCN.git /tmp/stgcn-src
+          mkdir -p vendor/stgcn
+          cp /tmp/stgcn-src/stgcn/Models.py vendor/stgcn/Models.py
+          cp /tmp/stgcn-src/stgcn/Utils.py vendor/stgcn/Utils.py
+          cp /tmp/stgcn-src/stgcn/ActionsEstLoader.py vendor/stgcn/ActionsEstLoader.py
+          cp /tmp/stgcn-src/stgcn/pose_utils.py vendor/stgcn/pose_utils.py
+          printf '' > vendor/stgcn/__init__.py
+          sha256sum /tmp/stgcn-src/stgcn/tsstg-model.pth > vendor/stgcn/source_weight.sha256
+          printf 'Source: https://github.com/Bigtuo/YOLOv7-Pose-Bytetrack-STGCN\nCopied by GitHub Actions via git clone.\n' > vendor/stgcn/SOURCE.txt
+      - name: Commit runtime source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add vendor/stgcn
+          git commit -m 'vendor: pull TSSTG runtime code from GitHub [skip ci]'
+          git push
