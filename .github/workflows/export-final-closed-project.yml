@@ -1,0 +1,64 @@
+name: Export Final Closed Project
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'final-project-export-trigger.txt'
+      - '.github/workflows/export-final-closed-project.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export-final-project:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify closed project before export
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          closed=json.loads(Path('PROJECT_CLOSED.json').read_text())
+          status=json.loads(Path('validation_outputs/final_validation_status.json').read_text())
+          assert closed['status']=='CLOSED'
+          assert status['status']=='PASS'
+          assert Path('models/candidates/prodbykosta_ppe_best.pt').stat().st_size > 1_000_000
+          assert Path('models/candidates/snehil_yolov8n_ppe_best.pt').stat().st_size > 1_000_000
+          assert Path('best.pt').stat().st_size > 1_000_000
+          assert Path('models/action_candidates/yolov8n-pose.pt').stat().st_size > 1_000_000
+          assert Path('models/action_candidates/bigtuo__tsstg-model.pth').stat().st_size > 10_000_000
+          print('CLOSED/PASS project verified')
+          PY
+      - name: Build final project zip
+        run: |
+          set -euxo pipefail
+          mkdir -p export_root/Smart_Workplace_Safety_FINAL_CLOSED
+          rsync -a --exclude '.git/' --exclude 'closure_inputs/' --exclude '__pycache__/' --exclude '*.pyc' ./ export_root/Smart_Workplace_Safety_FINAL_CLOSED/
+          cd export_root
+          zip -0 -r ../Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip Smart_Workplace_Safety_FINAL_CLOSED >/dev/null
+          cd ..
+          sha256sum Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip > Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip.sha256
+          unzip -t Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip >/dev/null
+          ls -lh Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip
+      - name: Upload final project artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart_Workplace_Safety_FINAL_CLOSED_PROJECT
+          path: |
+            Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip
+            Smart_Workplace_Safety_FINAL_CLOSED_PROJECT.zip.sha256
+          retention-days: 1
+          compression-level: 0
+      - name: Publish export run id
+        run: |
+          printf '{"run_id":%s,"commit":"%s","artifact":"Smart_Workplace_Safety_FINAL_CLOSED_PROJECT"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > final_project_export_run.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add final_project_export_run.json
+          git commit -m 'ci: final closed project artifact ready [skip ci]'
+          git pull --rebase || true
+          git push
