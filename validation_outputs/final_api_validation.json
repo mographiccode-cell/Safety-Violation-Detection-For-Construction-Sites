@@ -1,0 +1,11 @@
+{
+  "unauthenticated_redirect": true,
+  "secure_login": true,
+  "enhanced_model_status": true,
+  "action_ai_exposed": true,
+  "zone_create": true,
+  "zone_list": true,
+  "incidents": true,
+  "reports": true,
+  "emergency_application_simulation": true
+}

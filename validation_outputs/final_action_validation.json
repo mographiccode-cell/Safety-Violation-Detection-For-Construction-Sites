@@ -2,7 +2,7 @@
   "checks": {
     "action_evidence_status": true,
     "pose_coverage_100pct": true,
-    "thirty_or_more_pose_frames": false,
+    "thirty_or_more_pose_frames": true,
     "native_action_class": true,
     "source_joint_layout_13_plus_center": true,
     "action_weights_load": true,

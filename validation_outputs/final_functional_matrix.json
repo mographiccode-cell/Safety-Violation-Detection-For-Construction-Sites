@@ -1,0 +1,23 @@
+{
+  "secure_supervisor_login": "PASS",
+  "workplace_monitoring_ui": "PASS",
+  "immediate_risk_alerts": "PASS",
+  "unsafe_situation_review": "PASS",
+  "safety_reports_and_incident_summaries": "PASS",
+  "emergency_response": "PASS_APPLICATION_SIMULATION",
+  "uploaded_video_capture_and_processing": "PASS",
+  "continuous_live_monitoring_loop": "PASS_SOFTWARE_IMPLEMENTATION_CAMERA_REQUIRED_FOR_PHYSICAL_E2E",
+  "worker_detection": "PASS_REAL_AI",
+  "worker_tracking": "PASS",
+  "virtual_restricted_zones": "PASS",
+  "ppe_violation_detection": "PASS_REAL_MULTI_MODEL_TEMPORAL",
+  "unsafe_action_recognition": "PASS_REAL_YOLO_POSE_PLUS_TSSTG_30_FRAME",
+  "restricted_area_entry": "PASS",
+  "dangerous_worker_machine_proximity": "PASS_REAL_AI_PLUS_TEMPORAL_GEOMETRY",
+  "instant_alert_generation": "PASS",
+  "incident_sqlite_storage": "PASS",
+  "reports": "PASS",
+  "distance_claim": "PIXELS_ONLY_UNTIL_CAMERA_CALIBRATION",
+  "physical_plc_shutdown": "OUT_OF_SCOPE_APPLICATION_SIMULATION_ONLY",
+  "three_original_project_videos": "PASS_CLOSURE_EVIDENCE_PRODUCED_FROM_ORIGINAL_SOURCE_FILES"
+}
