@@ -12,7 +12,7 @@ import cv2
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
-from combined_pipeline import CombinedSafetyPipeline
+from enhanced_pipeline import TiledEquipmentCombinedPipeline
 from ensemble_engine import SafetyEnsembleEngine
 from incident_store import IncidentStore
 from zone_store import ZoneStore
@@ -39,7 +39,7 @@ IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "webm"}
 
 engine = SafetyEnsembleEngine(str(BASE_DIR / "models" / "ensemble_config.json"))
-pipeline = CombinedSafetyPipeline(engine)
+pipeline = TiledEquipmentCombinedPipeline(engine)
 store = IncidentStore(str(BASE_DIR / "data" / "incidents.db"))
 zones = ZoneStore(str(BASE_DIR / "data" / "incidents.db"))
 inference_lock = threading.RLock()
