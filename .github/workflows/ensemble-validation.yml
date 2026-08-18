@@ -1,0 +1,107 @@
+name: Validate Real Safety Ensemble
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ensemble_engine.py'
+      - 'incident_store.py'
+      - 'app.py'
+      - 'tests/**'
+      - 'models/ensemble_config.json'
+      - 'ensemble-validation-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics flask opencv-python-headless pytest
+
+      - name: Run unit tests
+        run: |
+          pytest -q tests/test_ensemble_engine.py
+
+      - name: Run real model smoke validation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import cv2
+          from ensemble_engine import SafetyEnsembleEngine
+
+          engine = SafetyEnsembleEngine('models/ensemble_config.json')
+          out = Path('validation_outputs')
+          out.mkdir(exist_ok=True)
+          samples = [
+              Path('model_test_inputs/v1_worker_machine_crop.jpg'),
+              Path('model_test_inputs/v2_worker_crop.jpg'),
+              Path('model_test_inputs/v3_worker_machine_crop.jpg'),
+          ]
+          summary = {
+              'model_status': engine.model_status(),
+              'samples': {},
+          }
+          for i, sample in enumerate(samples):
+              frame = cv2.imread(str(sample))
+              if frame is None:
+                  raise RuntimeError(f'Unable to read {sample}')
+              result = engine.analyze_frame(frame, frame_index=i)
+              annotated = engine.draw_overlay(frame, result)
+              cv2.imwrite(str(out / f'{sample.stem}_ensemble.jpg'), annotated)
+              payload = {
+                  'frame_index': result['frame_index'],
+                  'workers': result['workers'],
+                  'equipment': result['equipment'],
+                  'danger_zones': result['danger_zones'],
+                  'incidents': result['incidents'],
+              }
+              (out / f'{sample.stem}.json').write_text(json.dumps(payload, indent=2), encoding='utf-8')
+              summary['samples'][sample.name] = {
+                  'workers': len(result['workers']),
+                  'equipment': len(result['equipment']),
+                  'danger_zones': len(result['danger_zones']),
+                  'incidents': len(result['incidents']),
+                  'worker_severities': [w['severity'] for w in result['workers']],
+                  'worker_alerts': [w['alert'] for w in result['workers']],
+              }
+          (out / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Validate Flask API imports
+        run: |
+          python - <<'PY'
+          import app
+          client = app.app.test_client()
+          r = client.get('/api/status')
+          assert r.status_code == 200
+          data = r.get_json()
+          assert data['inference'] == 'REAL_TWO_MODEL_ENSEMBLE'
+          print(data)
+          PY
+
+      - name: Commit validation evidence
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add validation_outputs
+          if git diff --cached --quiet; then
+            echo 'No validation output changes.'
+          else
+            git commit -m 'test: real ensemble validation evidence [skip ci]'
+            git push
+          fi
