@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "selected_models": {
     "ppe_primary": {
       "path": "models/candidates/prodbykosta_ppe_best.pt",
@@ -13,8 +13,17 @@
     },
     "hazard_auxiliary": {
       "path": "best.pt",
-      "role": "Specialized hazard evidence; never accepted from one frame",
+      "role": "Supplementary specialized hazard evidence; never accepted from one frame",
       "classes": ["construction-machine", "fall_hazard", "no-fall-protection", "no-helmet", "no-safety-glasses", "no-safety-vest", "phone-usage", "poor-housekeeping", "safe-ladder-usage", "unsafe_ladder_use", "unsecure- electricalwires"]
+    },
+    "action_pose": {
+      "path": "models/action_candidates/yolov8n-pose.pt",
+      "role": "Real 17-keypoint COCO pose extraction for temporal action recognition"
+    },
+    "action_sequence": {
+      "path": "models/action_candidates/bigtuo__tsstg-model.pth",
+      "role": "Real 30-frame TSSTG sequence Action Recognition",
+      "classes": ["Standing", "Walking", "Sitting", "Lying Down", "Stand up", "Sit down", "Fall Down"]
     }
   },
   "excluded_models": {
@@ -30,7 +39,11 @@
     "iou_model_agreement": 0.20,
     "temporal_window_frames": 5,
     "temporal_required_frames": 3,
-    "incident_cooldown_frames": 30
+    "incident_cooldown_frames": 30,
+    "action_sequence_frames": 30,
+    "action_inference_step": 5,
+    "action_min_pose_coverage": 0.50,
+    "action_fall_min_confidence": 0.50
   },
   "safety_rules": {
     "helmet_safe": "Require overlapping Helmet/Hardhat confirmation from BOTH PPE models and temporal confirmation in at least 3 of 5 inference frames.",
@@ -38,7 +51,9 @@
     "ppe_disagreement": "Never mark SAFE when the PPE models disagree.",
     "machinery": "Use construction_secondary machinery/vehicle first; use auxiliary construction-machine only as a high-confidence fallback.",
     "missing_ppe": "Never infer missing PPE from a single absent positive detection. Prefer explicit negative class plus temporal evidence.",
-    "unsafe_behavior": "fall_hazard, unsafe_ladder_use, phone-usage and no-fall-protection from the auxiliary real model require at least 3 positive observations in the last 5 inference frames.",
+    "unsafe_behavior_auxiliary": "fall_hazard, unsafe_ladder_use, phone-usage and no-fall-protection from the auxiliary detector require at least 3 positive observations in the last 5 inference frames.",
+    "sequence_action": "Use real YOLO Pose + TSSTG over 30 tracked pose samples. Display only the seven model-native action names. Never rename an action as Entering Forklift.",
+    "fall_down_action": "TSSTG Fall Down becomes a CRITICAL unsafe-action hazard only when pose coverage is at least 50% and action confidence is at least 50%.",
     "auxiliary_false_positive_control": "A single auxiliary-model hazard detection never creates a confirmed behavior incident.",
     "distance": "Worker-equipment distance is reported in pixels unless camera calibration/homography is configured; no uncalibrated meter claim is allowed."
   }
