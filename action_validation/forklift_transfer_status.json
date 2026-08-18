@@ -1,0 +1,7 @@
+{
+  "file": "action_test_inputs/v1_entering_forklift_4_10s.mp4",
+  "decoded_frames": 4,
+  "tsstg_minimum_frames": 30,
+  "valid_for_action_test": false,
+  "note": "The transferred project clip is not used as Action AI proof when it contains fewer than 30 decoded frames."
+}
