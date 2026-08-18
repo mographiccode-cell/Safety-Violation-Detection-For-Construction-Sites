@@ -1,0 +1,66 @@
+name: Pull Stronger Safety Models
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'model-pull-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pull-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout target project
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Pull model repositories with Git
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/prodbykosta /tmp/snehil
+
+          # Candidate A: dedicated PPE model + separate person model
+          git clone --depth 1 https://github.com/prodbykosta/ppe-safety-detection-ai.git /tmp/prodbykosta
+
+          # Candidate B: YOLOv8 PPE model trained 100 epochs on the 10-class construction safety dataset
+          git clone --depth 1 https://github.com/snehilsanyal/Construction-Site-Safety-PPE-Detection.git /tmp/snehil
+
+          mkdir -p models/candidates
+          cp /tmp/prodbykosta/best.pt models/candidates/prodbykosta_ppe_best.pt
+          cp /tmp/prodbykosta/yolo12n.pt models/candidates/prodbykosta_person_yolo12n.pt
+          cp /tmp/snehil/models/best.pt models/candidates/snehil_yolov8n_ppe_best.pt
+
+          # Reject Git LFS pointer files or obviously invalid weights.
+          for f in models/candidates/*.pt; do
+            size=$(stat -c%s "$f")
+            echo "$f -> $size bytes"
+            if [ "$size" -lt 1000000 ]; then
+              echo "ERROR: $f is too small and may be an LFS pointer or invalid weight"
+              head -c 200 "$f" || true
+              exit 1
+            fi
+          done
+
+          sha256sum models/candidates/*.pt | tee models/candidates/SHA256SUMS.txt
+          ls -lh models/candidates
+
+      - name: Commit pulled model files into project
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add models/candidates/
+          if git diff --cached --quiet; then
+            echo 'Candidate models already present; nothing to commit.'
+          else
+            git commit -m 'models: pull stronger PPE/person weights from GitHub [skip ci]'
+            git push
+          fi
