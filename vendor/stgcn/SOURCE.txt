@@ -1,0 +1,2 @@
+Source: https://github.com/Bigtuo/YOLOv7-Pose-Bytetrack-STGCN
+Copied by GitHub Actions via git clone.
