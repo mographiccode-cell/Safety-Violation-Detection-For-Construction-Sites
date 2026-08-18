@@ -12,6 +12,7 @@ import cv2
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
+from combined_pipeline import CombinedSafetyPipeline
 from ensemble_engine import SafetyEnsembleEngine
 from incident_store import IncidentStore
 from zone_store import ZoneStore
@@ -38,6 +39,7 @@ IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "webm"}
 
 engine = SafetyEnsembleEngine(str(BASE_DIR / "models" / "ensemble_config.json"))
+pipeline = CombinedSafetyPipeline(engine)
 store = IncidentStore(str(BASE_DIR / "data" / "incidents.db"))
 zones = ZoneStore(str(BASE_DIR / "data" / "incidents.db"))
 inference_lock = threading.RLock()
@@ -110,8 +112,9 @@ def index():
 def status():
     return jsonify({
         "status": "ready",
-        "inference": "REAL_TWO_MODEL_ENSEMBLE",
+        "inference": "REAL_SAFETY_ENSEMBLE_PLUS_TSSTG_ACTION",
         "models": engine.model_status(),
+        "action_ai": pipeline.action.status(),
         "incident_store": str(store.db_path),
         "camera_id": CAMERA_ID,
         "camera_source_configured": bool(CAMERA_SOURCE),
@@ -138,12 +141,17 @@ def analyze_image():
         if frame is None:
             return jsonify({"error": "Unable to decode image"}), 400
         with inference_lock:
-            engine.reset_tracking()
-            result = engine.analyze_frame(frame, frame_index=0, fixed_zones=zones.list(camera_id, enabled_only=True))
-        cv2.imwrite(str(output_path), engine.draw_overlay(frame, result))
+            pipeline.reset()
+            result = pipeline.analyze_frame(frame, frame_index=0, fixed_zones=zones.list(camera_id, enabled_only=True))
+        cv2.imwrite(str(output_path), pipeline.draw_overlay(frame, result))
         saved = store.add_many(filename, result["incidents"])
         response = serialize_frame_result(result)
-        response.update({"annotated_image": f"/static/results/{output_name}", "saved_incidents": saved, "inference": "REAL_TWO_MODEL_ENSEMBLE"})
+        response.update({
+            "annotated_image": f"/static/results/{output_name}",
+            "saved_incidents": saved,
+            "inference": "REAL_SAFETY_ENSEMBLE_PLUS_TSSTG_ACTION",
+            "action_note": "A single image cannot produce a 30-frame TSSTG classification; temporal collection status is returned per worker.",
+        })
         return jsonify(response)
     finally:
         input_path.unlink(missing_ok=True)
@@ -166,16 +174,21 @@ def analyze_video():
     try:
         sample_every = max(1, int(request.form.get("sample_every_n_frames", 3)))
         with inference_lock:
-            report = engine.process_video(
+            report = pipeline.process_video(
                 str(input_path), str(output_path), sample_every_n_frames=sample_every,
                 fixed_zones=zones.list(camera_id, enabled_only=True),
             )
         saved = store.add_many(filename, report["incidents"])
         return jsonify({
-            "status": "completed", "inference": "REAL_TWO_MODEL_ENSEMBLE",
-            "video": f"/static/results/{output_name}", "frames": report["frames"],
-            "analyzed_frames": report["analyzed_frames"], "incident_count": len(report["incidents"]),
-            "saved_incidents": saved, "incidents": report["incidents"],
+            "status": "completed",
+            "inference": "REAL_SAFETY_ENSEMBLE_PLUS_TSSTG_ACTION",
+            "video": f"/static/results/{output_name}",
+            "frames": report["frames"],
+            "analyzed_frames": report["analyzed_frames"],
+            "incident_count": len(report["incidents"]),
+            "saved_incidents": saved,
+            "incidents": report["incidents"],
+            "latest_actions_by_track": report.get("latest_actions_by_track", {}),
         })
     finally:
         input_path.unlink(missing_ok=True)
@@ -185,9 +198,8 @@ def live_stream_generator():
     source = camera_source_value()
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
-        # Yield an HTTP-valid JPEG-like stream is not useful; generator simply ends.
         return
-    engine.reset_tracking()
+    pipeline.reset()
     frame_index = 0
     last_result = None
     try:
@@ -197,11 +209,15 @@ def live_stream_generator():
                 break
             if frame_index % LIVE_SAMPLE_EVERY == 0:
                 with inference_lock:
-                    last_result = engine.analyze_frame(frame, frame_index, fixed_zones=zones.list(CAMERA_ID, enabled_only=True))
+                    last_result = pipeline.analyze_frame(
+                        frame,
+                        frame_index,
+                        fixed_zones=zones.list(CAMERA_ID, enabled_only=True),
+                    )
                 if last_result["incidents"]:
                     store.add_many(f"live:{CAMERA_ID}", last_result["incidents"])
             if last_result:
-                frame = engine.draw_overlay(frame, last_result)
+                frame = pipeline.draw_overlay(frame, last_result)
             ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
             if ok:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + encoded.tobytes() + b"\r\n"
@@ -274,6 +290,6 @@ def emergency_response():
 
 
 if __name__ == "__main__":
-    print("Smart Workplace Safety — REAL TWO-MODEL ENSEMBLE")
-    print(engine.model_status())
+    print("Smart Workplace Safety — REAL SAFETY ENSEMBLE + TSSTG ACTION AI")
+    print(pipeline.status())
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False, threaded=True)
