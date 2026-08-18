@@ -59,7 +59,10 @@ jobs:
                   try:
                       model = YOLO(str(model_path))
                       payload['names'] = {str(k): v for k, v in model.names.items()}
-                      result = model.predict(source=str(image), imgsz=640, conf=0.15, iou=0.45, verbose=False)[0]
+                      results = model.predict(source=str(image), imgsz=640, conf=0.15, iou=0.45, verbose=False)
+                      if not results:
+                          raise RuntimeError('Ultralytics returned no result object for the input image')
+                      result = results[0]
                       payload['image_shape'] = [int(result.orig_shape[0]), int(result.orig_shape[1])]
                       if result.boxes is not None:
                           for box in result.boxes:
@@ -77,7 +80,6 @@ jobs:
 
       - name: Commit real inference JSON
         run: |
-          git pull --rebase
           git add model_test_results/*.json
           if git diff --cached --quiet; then
             echo 'No result changes.'
