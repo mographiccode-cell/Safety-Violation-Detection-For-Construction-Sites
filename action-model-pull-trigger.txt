@@ -1,1 +1,1 @@
-run real YOLO pose plus TSSTG on original forklift clip
+run real YOLO pose plus TSSTG diagnostic attempt 2
