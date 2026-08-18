@@ -7,9 +7,11 @@ on:
       - 'ensemble_engine.py'
       - 'incident_store.py'
       - 'app.py'
+      - 'templates/**'
       - 'tests/**'
       - 'models/ensemble_config.json'
       - 'ensemble-validation-trigger.txt'
+      - '.github/workflows/ensemble-validation.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,6 +21,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      SUPERVISOR_USER: supervisor
+      SUPERVISOR_PASSWORD: Safety@2026!
+      SECRET_KEY: github-actions-validation-key
     steps:
       - uses: actions/checkout@v4
 
@@ -32,8 +38,7 @@ jobs:
           pip install ultralytics flask opencv-python-headless pytest
 
       - name: Run unit tests
-        run: |
-          pytest -q tests/test_ensemble_engine.py
+        run: pytest -q tests/test_ensemble_engine.py
 
       - name: Run real model smoke validation
         run: |
@@ -51,17 +56,13 @@ jobs:
               Path('model_test_inputs/v2_worker_crop.jpg'),
               Path('model_test_inputs/v3_worker_machine_crop.jpg'),
           ]
-          summary = {
-              'model_status': engine.model_status(),
-              'samples': {},
-          }
+          summary = {'model_status': engine.model_status(), 'samples': {}}
           for i, sample in enumerate(samples):
               frame = cv2.imread(str(sample))
               if frame is None:
                   raise RuntimeError(f'Unable to read {sample}')
               result = engine.analyze_frame(frame, frame_index=i)
-              annotated = engine.draw_overlay(frame, result)
-              cv2.imwrite(str(out / f'{sample.stem}_ensemble.jpg'), annotated)
+              cv2.imwrite(str(out / f'{sample.stem}_ensemble.jpg'), engine.draw_overlay(frame, result))
               payload = {
                   'frame_index': result['frame_index'],
                   'workers': result['workers'],
@@ -82,16 +83,23 @@ jobs:
           print(json.dumps(summary, indent=2))
           PY
 
-      - name: Validate Flask API imports
+      - name: Validate authenticated Flask supervisor journey
         run: |
           python - <<'PY'
           import app
           client = app.app.test_client()
-          r = client.get('/api/status')
-          assert r.status_code == 200
-          data = r.get_json()
+          assert client.get('/').status_code in (301, 302)
+          login = client.post('/login', data={'username':'supervisor','password':'Safety@2026!'}, follow_redirects=False)
+          assert login.status_code in (301, 302)
+          status = client.get('/api/status')
+          assert status.status_code == 200
+          data = status.get_json()
           assert data['inference'] == 'REAL_TWO_MODEL_ENSEMBLE'
-          print(data)
+          assert client.get('/api/reports/summary').status_code == 200
+          emergency = client.post('/api/emergency', json={'camera':'validation-camera'})
+          assert emergency.status_code == 200
+          assert emergency.get_json()['mode'] == 'APPLICATION_SIMULATION'
+          print({'login':'PASS','status':'PASS','reports':'PASS','emergency':'PASS'})
           PY
 
       - name: Commit validation evidence
