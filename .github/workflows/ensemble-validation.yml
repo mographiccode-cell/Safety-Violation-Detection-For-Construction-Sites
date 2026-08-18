@@ -28,6 +28,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Mark validation runner started
+        run: |
+          mkdir -p validation_outputs
+          printf '{"runner_started":true,"stage":"checkout"}\n' > validation_outputs/runner_status.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add validation_outputs/runner_status.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'test: ensemble validation runner started [skip ci]'
+            git push
+          fi
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -86,30 +98,42 @@ jobs:
       - name: Validate authenticated Flask supervisor journey
         run: |
           python - <<'PY'
+          import json
+          from pathlib import Path
           import app
           client = app.app.test_client()
-          assert client.get('/').status_code in (301, 302)
+          results = {}
+          results['unauth_redirect'] = client.get('/').status_code in (301, 302)
           login = client.post('/login', data={'username':'supervisor','password':'Safety@2026!'}, follow_redirects=False)
-          assert login.status_code in (301, 302)
+          results['login'] = login.status_code in (301, 302)
           status = client.get('/api/status')
-          assert status.status_code == 200
-          data = status.get_json()
-          assert data['inference'] == 'REAL_TWO_MODEL_ENSEMBLE'
-          assert client.get('/api/reports/summary').status_code == 200
+          results['status'] = status.status_code == 200 and status.get_json().get('inference') == 'REAL_TWO_MODEL_ENSEMBLE'
+          results['reports'] = client.get('/api/reports/summary').status_code == 200
           emergency = client.post('/api/emergency', json={'camera':'validation-camera'})
-          assert emergency.status_code == 200
-          assert emergency.get_json()['mode'] == 'APPLICATION_SIMULATION'
-          print({'login':'PASS','status':'PASS','reports':'PASS','emergency':'PASS'})
+          results['emergency'] = emergency.status_code == 200 and emergency.get_json().get('mode') == 'APPLICATION_SIMULATION'
+          Path('validation_outputs/api_validation.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+          assert all(results.values()), results
+          print(results)
           PY
 
+      - name: Mark validation success
+        run: |
+          printf '{"runner_started":true,"status":"PASS","stage":"complete"}\n' > validation_outputs/runner_status.json
+
       - name: Commit validation evidence
+        if: always()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ ! -f validation_outputs/runner_status.json ]; then
+            mkdir -p validation_outputs
+            printf '{"runner_started":true,"status":"FAIL","stage":"unknown"}\n' > validation_outputs/runner_status.json
+          fi
           git add validation_outputs
           if git diff --cached --quiet; then
             echo 'No validation output changes.'
           else
             git commit -m 'test: real ensemble validation evidence [skip ci]'
+            git pull --rebase || true
             git push
           fi
