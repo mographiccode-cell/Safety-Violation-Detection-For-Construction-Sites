@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import math
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -56,6 +55,20 @@ def expand_box(box: Box, frame_shape: Tuple[int, int], x_ratio: float = 0.35, y_
     )
 
 
+def normalized_polygon_to_pixels(points: List[List[float]], frame_shape: Tuple[int, int]) -> np.ndarray:
+    h, w = frame_shape[:2]
+    return np.array(
+        [[int(round(float(x) * (w - 1))), int(round(float(y) * (h - 1)))] for x, y in points],
+        dtype=np.int32,
+    )
+
+
+def point_in_polygon(point: Tuple[float, float], polygon: np.ndarray) -> bool:
+    if polygon is None or len(polygon) < 3:
+        return False
+    return cv2.pointPolygonTest(polygon.astype(np.float32), point, False) >= 0
+
+
 def detection_dict(box, names: Dict[int, str]) -> Dict[str, Any]:
     cls_id = int(box.cls.item())
     return {
@@ -89,11 +102,7 @@ class TrackState:
 
 
 class IoUTracker:
-    """Small deterministic tracker used for temporal safety confirmation.
-
-    It intentionally has no extra trained weights. Detection remains the job of
-    the two real YOLO models; this class only associates adjacent detections.
-    """
+    """Associates real detector boxes across adjacent frames; no synthetic detections."""
 
     def __init__(self, iou_threshold: float = 0.25, max_age: int = 15, history_len: int = 5):
         self.iou_threshold = iou_threshold
@@ -106,7 +115,6 @@ class IoUTracker:
         candidates = [(tid, tr) for tid, tr in self.tracks.items() if frame_index - tr.last_frame <= self.max_age]
         unused_tracks = {tid for tid, _ in candidates}
         output: List[TrackState] = []
-
         for pbox in person_boxes:
             best_tid, best_iou = None, 0.0
             for tid, tr in candidates:
@@ -131,7 +139,6 @@ class IoUTracker:
                 self.tracks[self.next_id] = tr
                 self.next_id += 1
             output.append(tr)
-
         stale = [tid for tid, tr in self.tracks.items() if frame_index - tr.last_frame > self.max_age]
         for tid in stale:
             self.tracks.pop(tid, None)
@@ -139,12 +146,7 @@ class IoUTracker:
 
 
 class SafetyEnsembleEngine:
-    """Real two-model workplace-safety inference pipeline.
-
-    Primary model: Person + positive PPE confirmation.
-    Secondary model: Person + positive/negative PPE + machinery/vehicle.
-    A PPE item is not considered SAFE from one model alone.
-    """
+    """Two real YOLO weights + temporal consensus + worker/equipment relationships."""
 
     def __init__(self, config_path: str = "models/ensemble_config.json"):
         self.config_path = Path(config_path)
@@ -162,16 +164,13 @@ class SafetyEnsembleEngine:
         self.temporal_required = int(t["temporal_required_frames"])
         self.tracker = IoUTracker(history_len=self.temporal_window)
 
+    def reset_tracking(self) -> None:
+        self.tracker = IoUTracker(history_len=self.temporal_window)
+
     def model_status(self) -> Dict[str, Any]:
         return {
-            "primary": {
-                "path": self.config["selected_models"]["ppe_primary"]["path"],
-                "classes": self.primary.names,
-            },
-            "secondary": {
-                "path": self.config["selected_models"]["construction_secondary"]["path"],
-                "classes": self.secondary.names,
-            },
+            "primary": {"path": self.config["selected_models"]["ppe_primary"]["path"], "classes": self.primary.names},
+            "secondary": {"path": self.config["selected_models"]["construction_secondary"]["path"], "classes": self.secondary.names},
             "temporal_rule": f"{self.temporal_required}-of-{self.temporal_window}",
         }
 
@@ -195,14 +194,7 @@ class SafetyEnsembleEngine:
                 boxes.append(det["xyxy"])
         return boxes
 
-    def _positive_agreement(
-        self,
-        person_box: Box,
-        primary: List[Dict[str, Any]],
-        secondary: List[Dict[str, Any]],
-        primary_class: str,
-        secondary_class: str,
-    ) -> Dict[str, Any]:
+    def _positive_agreement(self, person_box: Box, primary: List[Dict[str, Any]], secondary: List[Dict[str, Any]], primary_class: str, secondary_class: str) -> Dict[str, Any]:
         pa = [d for d in self._by_class(primary, [primary_class], self.ppe_min) if det_center_in_person(d, person_box)]
         sb = [d for d in self._by_class(secondary, [secondary_class], self.ppe_min) if det_center_in_person(d, person_box)]
         best = None
@@ -234,7 +226,19 @@ class SafetyEnsembleEngine:
         items = [d for d in self._by_class(secondary, [class_name], self.ppe_min) if det_center_in_person(d, person_box)]
         return max(items, key=lambda d: d["confidence"], default=None)
 
-    def analyze_frame(self, frame: np.ndarray, frame_index: int = 0) -> Dict[str, Any]:
+    @staticmethod
+    def _fixed_zone_runtime(fixed_zones: Optional[List[Dict[str, Any]]], frame_shape: Tuple[int, int]) -> List[Dict[str, Any]]:
+        runtime = []
+        for zone in fixed_zones or []:
+            if not zone.get("enabled", True):
+                continue
+            polygon = normalized_polygon_to_pixels(zone.get("points", []), frame_shape)
+            if len(polygon) < 3:
+                continue
+            runtime.append({**zone, "polygon_px": polygon})
+        return runtime
+
+    def analyze_frame(self, frame: np.ndarray, frame_index: int = 0, fixed_zones: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         primary = self._predict(self.primary, frame)
         secondary = self._predict(self.secondary, frame)
         person_boxes = self._person_boxes(primary, secondary)
@@ -251,27 +255,32 @@ class SafetyEnsembleEngine:
             }
             for d in equipment
         ]
+        restricted_zones = self._fixed_zone_runtime(fixed_zones, frame.shape[:2])
 
-        workers = []
-        incidents = []
+        workers, incidents = [], []
         for tr in tracks:
             helmet = self._positive_agreement(tr.box, primary, secondary, "Helmet", "Hardhat")
             vest = self._positive_agreement(tr.box, primary, secondary, "Vest", "Safety Vest")
             no_helmet = self._explicit_negative(tr.box, secondary, "NO-Hardhat")
             no_vest = self._explicit_negative(tr.box, secondary, "NO-Safety Vest")
-
             fp = foot_point(tr.box)
-            active_zones = [z for z in danger_zones if point_in_box(fp, z["zone_box"])]
-            proximity_now = bool(active_zones)
+
+            active_dynamic = [z for z in danger_zones if point_in_box(fp, z["zone_box"])]
+            proximity_now = bool(active_dynamic)
+            restricted_hits = [
+                {"id": z.get("id"), "name": z.get("name"), "zone_type": z.get("zone_type", "RESTRICTED")}
+                for z in restricted_zones
+                if str(z.get("zone_type", "RESTRICTED")).upper() == "RESTRICTED" and point_in_polygon(fp, z["polygon_px"])
+            ]
+
             tr.helmet_history.append(bool(helmet["confirmed"]))
             tr.vest_history.append(bool(vest["confirmed"]))
             tr.proximity_history.append(proximity_now)
-
             helmet_temporal = tr.confirmed(tr.helmet_history, self.temporal_required)
             vest_temporal = tr.confirmed(tr.vest_history, self.temporal_required)
             proximity_temporal = tr.confirmed(tr.proximity_history, self.temporal_required)
 
-            hazards = []
+            hazards: List[Dict[str, Any]] = []
             if no_helmet:
                 hazards.append({"type": "NO_HARDHAT", "severity": "HIGH", "confidence": no_helmet["confidence"]})
             elif len(tr.helmet_history) >= self.temporal_required and not helmet_temporal:
@@ -280,11 +289,13 @@ class SafetyEnsembleEngine:
                 hazards.append({"type": "NO_SAFETY_VEST", "severity": "HIGH", "confidence": no_vest["confidence"]})
             elif len(tr.vest_history) >= self.temporal_required and not vest_temporal:
                 hazards.append({"type": "VEST_NOT_CONFIRMED", "severity": "MEDIUM", "confidence": 1.0})
+            for zone in restricted_hits:
+                hazards.append({"type": "RESTRICTED_ZONE_ENTRY", "severity": "HIGH", "confidence": 1.0, "zone_id": zone["id"], "zone_name": zone["name"]})
             if proximity_temporal:
-                hazards.append({"type": "DANGEROUS_MACHINE_PROXIMITY", "severity": "CRITICAL", "confidence": max([z["confidence"] for z in active_zones], default=1.0)})
+                hazards.append({"type": "DANGEROUS_MACHINE_PROXIMITY", "severity": "CRITICAL", "confidence": max([z["confidence"] for z in active_dynamic], default=1.0)})
 
-            severity_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-            severity = max((h["severity"] for h in hazards), key=lambda s: severity_rank[s], default="LOW")
+            rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+            severity = max((h["severity"] for h in hazards), key=lambda s: rank[s], default="LOW")
             worker = {
                 "track_id": tr.track_id,
                 "box": tr.box,
@@ -293,6 +304,7 @@ class SafetyEnsembleEngine:
                 "vest": {"frame": vest, "temporal_confirmed": vest_temporal, "history": list(tr.vest_history)},
                 "inside_dynamic_danger_zone": proximity_now,
                 "proximity_temporal_confirmed": proximity_temporal,
+                "restricted_zone_hits": restricted_hits,
                 "hazards": hazards,
                 "severity": severity,
                 "alert": severity in {"HIGH", "CRITICAL"},
@@ -302,17 +314,32 @@ class SafetyEnsembleEngine:
                 if hazard["severity"] in {"HIGH", "CRITICAL"}:
                     incidents.append({"track_id": tr.track_id, **hazard, "frame_index": frame_index})
 
+        safe_restricted = []
+        for z in restricted_zones:
+            item = {k: v for k, v in z.items() if k != "polygon_px"}
+            item["polygon_px"] = z["polygon_px"].tolist()
+            safe_restricted.append(item)
         return {
             "frame_index": frame_index,
             "workers": workers,
             "equipment": equipment,
             "danger_zones": danger_zones,
+            "restricted_zones": safe_restricted,
             "incidents": incidents,
             "raw": {"primary": primary, "secondary": secondary},
         }
 
     def draw_overlay(self, frame: np.ndarray, result: Dict[str, Any]) -> np.ndarray:
         out = frame.copy()
+        for z in result.get("restricted_zones", []):
+            polygon = np.array(z["polygon_px"], dtype=np.int32)
+            overlay = out.copy()
+            cv2.fillPoly(overlay, [polygon], (45, 45, 210))
+            out = cv2.addWeighted(overlay, 0.12, out, 0.88, 0)
+            cv2.polylines(out, [polygon], True, (55, 55, 255), 3)
+            x, y = map(int, polygon[0])
+            cv2.putText(out, f"RESTRICTED: {z.get('name','Zone')}", (x, max(24, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (55, 55, 255), 2)
+
         for z in result["danger_zones"]:
             x1, y1, x2, y2 = map(int, z["zone_box"])
             overlay = out.copy()
@@ -333,10 +360,13 @@ class SafetyEnsembleEngine:
             vest = "VEST OK" if w["vest"]["temporal_confirmed"] else "VEST ?"
             cv2.putText(out, f"{helmet} | {vest}", (x1, min(out.shape[0] - 10, y2 + 22)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
             if w["inside_dynamic_danger_zone"]:
-                cv2.putText(out, "INSIDE DANGER ZONE", (x1, min(out.shape[0] - 34, y2 + 45)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
+                cv2.putText(out, "INSIDE MACHINE DANGER ZONE", (x1, min(out.shape[0] - 34, y2 + 45)), cv2.FONT_HERSHEY_SIMPLEX, 0.53, (0, 0, 255), 2)
+            if w.get("restricted_zone_hits"):
+                cv2.putText(out, "RESTRICTED ZONE ENTRY", (x1, min(out.shape[0] - 58, y2 + 68)), cv2.FONT_HERSHEY_SIMPLEX, 0.53, (0, 0, 255), 2)
         return out
 
-    def process_video(self, input_path: str, output_path: str, sample_every_n_frames: int = 3) -> Dict[str, Any]:
+    def process_video(self, input_path: str, output_path: str, sample_every_n_frames: int = 3, fixed_zones: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        self.reset_tracking()
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {input_path}")
@@ -344,17 +374,16 @@ class SafetyEnsembleEngine:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
-        frame_index = 0
+        frame_index, analyzed_frames = 0, 0
         incidents: List[Dict[str, Any]] = []
         last_result: Optional[Dict[str, Any]] = None
-        analyzed_frames = 0
         try:
             while True:
                 ok, frame = cap.read()
                 if not ok:
                     break
                 if frame_index % max(1, sample_every_n_frames) == 0:
-                    last_result = self.analyze_frame(frame, frame_index)
+                    last_result = self.analyze_frame(frame, frame_index, fixed_zones=fixed_zones)
                     incidents.extend(last_result["incidents"])
                     analyzed_frames += 1
                 if last_result:
@@ -364,10 +393,4 @@ class SafetyEnsembleEngine:
         finally:
             cap.release()
             writer.release()
-        return {
-            "input": input_path,
-            "output": output_path,
-            "frames": frame_index,
-            "analyzed_frames": analyzed_frames,
-            "incidents": incidents,
-        }
+        return {"input": input_path, "output": output_path, "frames": frame_index, "analyzed_frames": analyzed_frames, "incidents": incidents}
