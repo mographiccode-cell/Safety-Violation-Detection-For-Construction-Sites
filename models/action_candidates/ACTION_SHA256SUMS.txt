@@ -1,0 +1,2 @@
+1cac9a6da99d5d67da8ab58ee7633c5e923d85fba668673f028792819750a149  models/action_candidates/bigtuo__tsstg-model.pth
+c6fa93dd1ee4a2c18c900a45c1d864a1c6f7aba75d84f91648a30b7fb641d212  models/action_candidates/yolov8n-pose.pt

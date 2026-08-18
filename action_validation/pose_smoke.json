@@ -1,0 +1,9 @@
+{
+  "pose_people": 1,
+  "keypoint_sets": 1,
+  "keypoint_shape": [
+    1,
+    17,
+    3
+  ]
+}
