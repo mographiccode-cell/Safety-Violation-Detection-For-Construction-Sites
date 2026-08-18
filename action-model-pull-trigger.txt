@@ -1,1 +1,1 @@
-run compact real TSSTG validation on pose_test1 attempt 5
+run direct real 30-frame TSSTG validation attempt 6
