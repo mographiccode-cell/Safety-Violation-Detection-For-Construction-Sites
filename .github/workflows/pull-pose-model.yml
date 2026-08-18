@@ -1,0 +1,63 @@
+name: Pull Real Pose Model From GitHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pose-model-pull-trigger.txt'
+      - '.github/workflows/pull-pose-model.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone repository containing pose ONNX
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/pose-src
+          git clone --depth 1 https://github.com/Lamtran213/CameraProject.git /tmp/pose-src
+          test -f /tmp/pose-src/CameraProject/yolov8n-pose.onnx
+          bytes=$(wc -c < /tmp/pose-src/CameraProject/yolov8n-pose.onnx)
+          echo "pose bytes=$bytes"
+          test "$bytes" -gt 1000000
+          if head -c 100 /tmp/pose-src/CameraProject/yolov8n-pose.onnx | grep -q 'git-lfs'; then
+            echo 'ERROR: pose file is an LFS pointer, not a real model'
+            exit 1
+          fi
+          mkdir -p models/action_candidates
+          cp /tmp/pose-src/CameraProject/yolov8n-pose.onnx models/action_candidates/yolov8n-pose.onnx
+          sha256sum models/action_candidates/yolov8n-pose.onnx > models/action_candidates/yolov8n-pose.sha256
+      - name: Verify with ONNX Runtime and Ultralytics
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics onnxruntime opencv-python-headless
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import onnxruntime as ort
+          from ultralytics import YOLO
+          p='models/action_candidates/yolov8n-pose.onnx'
+          sess=ort.InferenceSession(p, providers=['CPUExecutionProvider'])
+          model=YOLO(p, task='pose')
+          info={
+            'size':Path(p).stat().st_size,
+            'onnx_inputs':[(x.name,x.shape) for x in sess.get_inputs()],
+            'onnx_outputs':[(x.name,x.shape) for x in sess.get_outputs()],
+            'ultralytics_load':'PASS'
+          }
+          Path('models/action_candidates/yolov8n-pose.info.json').write_text(json.dumps(info,indent=2),encoding='utf-8')
+          print(json.dumps(info,indent=2))
+          PY
+      - name: Commit pose model
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add models/action_candidates/yolov8n-pose.onnx models/action_candidates/yolov8n-pose.sha256 models/action_candidates/yolov8n-pose.info.json
+          git commit -m 'models: pull real YOLOv8 pose ONNX from GitHub [skip ci]'
+          git push
