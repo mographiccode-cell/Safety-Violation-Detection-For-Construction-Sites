@@ -1,1 +1,1 @@
-pull real pose model for TSSTG action recognition
+pull real pose PT for TSSTG action recognition attempt 2
