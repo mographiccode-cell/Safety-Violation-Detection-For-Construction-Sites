@@ -18,6 +18,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Mark runner started
+        run: |
+          mkdir -p model_test_results
+          date -u +'%Y-%m-%dT%H:%M:%SZ' > model_test_results/runner_started.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add model_test_results/runner_started.txt
+          git commit -m 'test: model runner started [skip ci]'
+          git push
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -41,19 +51,11 @@ jobs:
               ('best_pt', Path('best.pt')),
               ('yolo26n_ppe', Path('models/yolo26n_ppe.pt')),
           ]
-
           summary = {}
           for image in inputs:
               summary[image.name] = {}
               for tag, model_path in models:
-                  payload = {
-                      'model_tag': tag,
-                      'model_path': str(model_path),
-                      'image': image.name,
-                      'status': 'error',
-                      'names': {},
-                      'detections': [],
-                  }
+                  payload = {'model_tag': tag, 'model_path': str(model_path), 'image': image.name, 'status': 'error', 'names': {}, 'detections': []}
                   try:
                       model = YOLO(str(model_path))
                       payload['names'] = {str(k): v for k, v in model.names.items()}
@@ -62,32 +64,20 @@ jobs:
                       if result.boxes is not None:
                           for box in result.boxes:
                               cls_id = int(box.cls.item())
-                              payload['detections'].append({
-                                  'class_id': cls_id,
-                                  'class_name': model.names[cls_id],
-                                  'confidence': round(float(box.conf.item()), 6),
-                                  'xyxy': [round(float(x), 3) for x in box.xyxy[0].tolist()],
-                              })
+                              payload['detections'].append({'class_id': cls_id, 'class_name': model.names[cls_id], 'confidence': round(float(box.conf.item()), 6), 'xyxy': [round(float(x), 3) for x in box.xyxy[0].tolist()]})
                       payload['status'] = 'ok'
                   except Exception as exc:
                       payload['error'] = f'{type(exc).__name__}: {exc}'
                       payload['traceback'] = traceback.format_exc()[-5000:]
-                  out = out_dir / f'{image.stem}__{tag}.json'
-                  out.write_text(json.dumps(payload, indent=2), encoding='utf-8')
-                  summary[image.name][tag] = {
-                      'status': payload['status'],
-                      'count': len(payload['detections']),
-                      'classes': [d['class_name'] for d in payload['detections']],
-                      'error': payload.get('error'),
-                  }
+                  (out_dir / f'{image.stem}__{tag}.json').write_text(json.dumps(payload, indent=2), encoding='utf-8')
+                  summary[image.name][tag] = {'status': payload['status'], 'count': len(payload['detections']), 'classes': [d['class_name'] for d in payload['detections']], 'error': payload.get('error')}
           (out_dir / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
           print(json.dumps(summary, indent=2))
           PY
 
       - name: Commit real inference JSON
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase
           git add model_test_results/*.json
           if git diff --cached --quiet; then
             echo 'No result changes.'
