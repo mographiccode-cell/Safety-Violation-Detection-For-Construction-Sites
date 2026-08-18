@@ -1,0 +1,14 @@
+[
+  {
+    "file": "models/action_candidates/yolov7Person__person-tiny.onnx",
+    "size": 24104006
+  },
+  {
+    "file": "models/action_candidates/Models__tsstg-model.pth",
+    "size": 24757013
+  },
+  {
+    "file": "models/action_candidates/bigtuo__tsstg-model.pth",
+    "size": 24708522
+  }
+]

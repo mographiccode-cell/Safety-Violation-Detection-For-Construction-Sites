@@ -1,0 +1,17 @@
+[
+  {
+    "path": "trng/Models/TSSTG/tsstg-model.pth",
+    "size": 24757013,
+    "sha256": "b029d99d2d1533e38692e160304e750d2b0a0a7be86922b65b573a094cde9993"
+  },
+  {
+    "path": "bigtuo/stgcn/tsstg-model.pth",
+    "size": 24708522,
+    "sha256": "1cac9a6da99d5d67da8ab58ee7633c5e923d85fba668673f028792819750a149"
+  },
+  {
+    "path": "trng/yolov7Person/weights/person-tiny.onnx",
+    "size": 24104006,
+    "sha256": "d3de871da185dce381b2ecf0e3dcec74864170a2a6bfa03c4790991064677031"
+  }
+]
