@@ -1,4 +1,22 @@
 {
+  "v1_worker_machine_crop.jpg": {
+    "best_pt": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "no-safety-vest"
+      ],
+      "error": null
+    },
+    "yolo26n_ppe": {
+      "status": "ok",
+      "count": 1,
+      "classes": [
+        "helmet"
+      ],
+      "error": null
+    }
+  },
   "v2_8s.jpg": {
     "best_pt": {
       "status": "ok",
@@ -31,6 +49,20 @@
         "gloves",
         "gloves"
       ],
+      "error": null
+    }
+  },
+  "v3_worker_machine_crop.jpg": {
+    "best_pt": {
+      "status": "ok",
+      "count": 0,
+      "classes": [],
+      "error": null
+    },
+    "yolo26n_ppe": {
+      "status": "ok",
+      "count": 0,
+      "classes": [],
       "error": null
     }
   }

@@ -20,7 +20,7 @@
     {
       "class_id": 6,
       "class_name": "Person",
-      "confidence": 0.51528,
+      "confidence": 0.51527,
       "xyxy": [
         30.019,
         9.933,
@@ -31,7 +31,7 @@
     {
       "class_id": 0,
       "class_name": "helmet",
-      "confidence": 0.434615,
+      "confidence": 0.434616,
       "xyxy": [
         84.791,
         16.755,
@@ -42,7 +42,7 @@
     {
       "class_id": 1,
       "class_name": "gloves",
-      "confidence": 0.19005,
+      "confidence": 0.190049,
       "xyxy": [
         187.168,
         253.561,
@@ -53,7 +53,7 @@
     {
       "class_id": 1,
       "class_name": "gloves",
-      "confidence": 0.173344,
+      "confidence": 0.173347,
       "xyxy": [
         187.424,
         251.214,
