@@ -1,0 +1,40 @@
+name: Export Closure Weights
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'closure-export-trigger.txt'
+      - '.github/workflows/export-closure-weights.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-weights:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify selected model files
+        run: |
+          set -euxo pipefail
+          test -f models/candidates/prodbykosta_ppe_best.pt
+          test -f models/candidates/snehil_yolov8n_ppe_best.pt
+          test -f best.pt
+          test -f models/action_candidates/yolov8n-pose.pt
+          test -f models/action_candidates/bigtuo__tsstg-model.pth
+          mkdir -p closure_weights/models/candidates closure_weights/models/action_candidates
+          cp models/candidates/prodbykosta_ppe_best.pt closure_weights/models/candidates/
+          cp models/candidates/snehil_yolov8n_ppe_best.pt closure_weights/models/candidates/
+          cp best.pt closure_weights/
+          cp models/action_candidates/yolov8n-pose.pt closure_weights/models/action_candidates/
+          cp models/action_candidates/bigtuo__tsstg-model.pth closure_weights/models/action_candidates/
+          sha256sum closure_weights/best.pt closure_weights/models/candidates/*.pt closure_weights/models/action_candidates/* > closure_weights/SHA256SUMS.txt
+      - name: Upload closure weights artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-workplace-safety-closure-weights
+          path: closure_weights
+          retention-days: 1
+          compression-level: 0
