@@ -1,0 +1,336 @@
+{
+  "inference": "REAL_SAFETY_ENSEMBLE_PLUS_TSSTG_ACTION",
+  "workers": [
+    {
+      "track_id": 1,
+      "box": [
+        23.03664779663086,
+        0.0,
+        239.9118194580078,
+        219.15138244628906
+      ],
+      "person_confidence": 0.47256478667259216,
+      "person_sources": [
+        "secondary",
+        "primary"
+      ],
+      "foot_point": [
+        131.47423362731934,
+        219.15138244628906
+      ],
+      "helmet": {
+        "frame": {
+          "confirmed": true,
+          "confidence": 0.5939551591873169,
+          "primary_confidence": 0.5939551591873169,
+          "secondary_confidence": 0.6291094422340393,
+          "iou": 0.5596202099872584,
+          "primary_box": [
+            85.67082214355469,
+            21.474924087524414,
+            148.7837677001953,
+            54.562950134277344
+          ],
+          "secondary_box": [
+            94.86272430419922,
+            19.76483917236328,
+            148.58570861816406,
+            44.18509292602539
+          ]
+        },
+        "temporal_confirmed": false,
+        "history": [
+          true
+        ]
+      },
+      "vest": {
+        "frame": {
+          "confirmed": false,
+          "confidence": 0.0,
+          "primary_seen": 0.0,
+          "secondary_seen": 0.0
+        },
+        "temporal_confirmed": false,
+        "history": [
+          false
+        ]
+      },
+      "unsafe_behavior_evidence": [
+        {
+          "class_name": "fall_hazard",
+          "severity": "CRITICAL",
+          "current_confidence": 0.0,
+          "history": [
+            0.0
+          ],
+          "positive_frames": 0,
+          "confirmed": false,
+          "confidence": 0.0
+        },
+        {
+          "class_name": "unsafe_ladder_use",
+          "severity": "HIGH",
+          "current_confidence": 0.0,
+          "history": [
+            0.0
+          ],
+          "positive_frames": 0,
+          "confirmed": false,
+          "confidence": 0.0
+        },
+        {
+          "class_name": "phone-usage",
+          "severity": "HIGH",
+          "current_confidence": 0.0,
+          "history": [
+            0.0
+          ],
+          "positive_frames": 0,
+          "confirmed": false,
+          "confidence": 0.0
+        },
+        {
+          "class_name": "no-fall-protection",
+          "severity": "HIGH",
+          "current_confidence": 0.0,
+          "history": [
+            0.0
+          ],
+          "positive_frames": 0,
+          "confirmed": false,
+          "confidence": 0.0
+        }
+      ],
+      "relationships": [
+        {
+          "type": "CLOSE_TO",
+          "equipment_class": "machinery",
+          "equipment_confidence": 0.7323092222213745,
+          "equipment_source": "secondary",
+          "distance_px": 95.7732791780111,
+          "distance_unit": "pixels_uncalibrated",
+          "worker_point": [
+            131.47423362731934,
+            219.15138244628906
+          ],
+          "equipment_point": [
+            135.22264289855957,
+            123.45148468017578
+          ]
+        }
+      ],
+      "inside_dynamic_danger_zone": true,
+      "proximity_temporal_confirmed": false,
+      "restricted_zone_hits": [
+        {
+          "id": 999,
+          "name": "Validation Restricted Area",
+          "zone_type": "RESTRICTED"
+        }
+      ],
+      "hazards": [
+        {
+          "type": "RESTRICTED_ZONE_ENTRY",
+          "severity": "HIGH",
+          "confidence": 1.0,
+          "source": "tracked_worker_geometry",
+          "zone_id": 999,
+          "zone_name": "Validation Restricted Area"
+        }
+      ],
+      "severity": "HIGH",
+      "alert": true,
+      "action": {
+        "status": "collecting",
+        "source": "YOLO_POSE_TSSTG_SEQUENCE",
+        "collected_frames": 1,
+        "required_frames": 30,
+        "pose_frames_detected": 1,
+        "pose_coverage": 1.0,
+        "pose_person_confidence": 0.7033419609069824,
+        "visible_keypoints": 12,
+        "frame_index": 0
+      }
+    }
+  ],
+  "equipment": [
+    {
+      "class_id": 8,
+      "class_name": "machinery",
+      "confidence": 0.7323092222213745,
+      "xyxy": [
+        30.14896011352539,
+        0.0,
+        240.29632568359375,
+        246.90296936035156
+      ],
+      "source": "secondary"
+    }
+  ],
+  "danger_zones": [
+    {
+      "equipment_class": "machinery",
+      "confidence": 0.7323092222213745,
+      "equipment_box": [
+        30.14896011352539,
+        0.0,
+        240.29632568359375,
+        246.90296936035156
+      ],
+      "equipment_source": "secondary",
+      "zone_box": [
+        0.0,
+        0.0,
+        241.0,
+        249.0
+      ]
+    }
+  ],
+  "restricted_zones": [
+    {
+      "id": 999,
+      "camera_id": "validation-camera",
+      "name": "Validation Restricted Area",
+      "zone_type": "RESTRICTED",
+      "points": [
+        [
+          0.45,
+          0.1
+        ],
+        [
+          0.98,
+          0.1
+        ],
+        [
+          0.98,
+          0.98
+        ],
+        [
+          0.45,
+          0.98
+        ]
+      ],
+      "enabled": true,
+      "polygon_px": [
+        [
+          108,
+          25
+        ],
+        [
+          236,
+          25
+        ],
+        [
+          236,
+          244
+        ],
+        [
+          108,
+          244
+        ]
+      ]
+    }
+  ],
+  "incidents": [
+    {
+      "track_id": 1,
+      "type": "RESTRICTED_ZONE_ENTRY",
+      "severity": "HIGH",
+      "confidence": 1.0,
+      "source": "tracked_worker_geometry",
+      "zone_id": 999,
+      "zone_name": "Validation Restricted Area",
+      "frame_index": 0
+    }
+  ],
+  "pipeline_status": {
+    "safety": {
+      "primary": {
+        "path": "models/candidates/prodbykosta_ppe_best.pt",
+        "classes": {
+          "0": "Boots",
+          "1": "Ear-protection",
+          "2": "Glass",
+          "3": "Glove",
+          "4": "Helmet",
+          "5": "Mask",
+          "6": "Person",
+          "7": "Vest"
+        },
+        "role": "PPE confirmation"
+      },
+      "secondary": {
+        "path": "models/candidates/snehil_yolov8n_ppe_best.pt",
+        "classes": {
+          "0": "Hardhat",
+          "1": "Mask",
+          "2": "NO-Hardhat",
+          "3": "NO-Mask",
+          "4": "NO-Safety Vest",
+          "5": "Person",
+          "6": "Safety Cone",
+          "7": "Safety Vest",
+          "8": "machinery",
+          "9": "vehicle"
+        },
+        "role": "Construction + machinery"
+      },
+      "auxiliary": {
+        "path": "best.pt",
+        "classes": {
+          "0": "construction-machine",
+          "1": "fall_hazard",
+          "2": "no-fall-protection",
+          "3": "no-helmet",
+          "4": "no-safety-glasses",
+          "5": "no-safety-vest",
+          "6": "phone-usage",
+          "7": "poor-housekeeping",
+          "8": "safe-ladder-usage",
+          "9": "unsafe_ladder_use",
+          "10": "unsecure- electricalwires"
+        },
+        "role": "Temporal unsafe-hazard evidence"
+      },
+      "temporal_rule": "3-of-5"
+    },
+    "action": {
+      "pose_model": "/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/models/action_candidates/yolov8n-pose.pt",
+      "action_model": "/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/models/action_candidates/bigtuo__tsstg-model.pth",
+      "action_classes": [
+        "Standing",
+        "Walking",
+        "Sitting",
+        "Lying Down",
+        "Stand up",
+        "Sit down",
+        "Fall Down"
+      ],
+      "sequence_length": 30,
+      "source_joint_indices": [
+        0,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "tsstg_graph_nodes": 14,
+      "device": "cpu",
+      "per_track_buffer": 30,
+      "inference_step": 5,
+      "min_pose_coverage": 0.5
+    },
+    "fall_down_hazard_gate": {
+      "min_confidence": 0.5,
+      "min_pose_coverage": 0.5
+    }
+  }
+}
