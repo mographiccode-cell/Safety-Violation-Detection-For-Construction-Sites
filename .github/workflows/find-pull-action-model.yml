@@ -1,4 +1,4 @@
-name: Find GitHub Action Recognition Weights
+name: Real Git-Pulled Action Recognition
 
 on:
   push:
@@ -12,77 +12,95 @@ permissions:
   contents: write
 
 jobs:
-  discover:
+  action-inference:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Clone public action-recognition candidates
+
+      - name: Git-clone pose and TSSTG sources
         run: |
           set -euxo pipefail
-          rm -rf /tmp/action-models && mkdir -p /tmp/action-models
-          cd /tmp/action-models
-          git clone --depth 1 https://github.com/subha-ilamathy/fall_detection_actions.git subha || true
-          git clone --depth 1 https://github.com/Bigtuo/YOLOv7-Pose-Bytetrack-STGCN.git bigtuo || true
-          git clone --depth 1 https://github.com/TrNgTinh/Human-Action-Tracking.git trng || true
-          git clone --depth 1 https://github.com/AllenCaoo/Fall-Detect-AlphaPose-ST_GCN.git allen || true
-          git clone --depth 1 https://github.com/irdanish11/early-fall-detection-multi-stage-lstm.git early || true
+          rm -rf /tmp/action-src /tmp/pose-src
+          git clone --depth 1 https://github.com/Bigtuo/YOLOv7-Pose-Bytetrack-STGCN.git /tmp/action-src
+          git clone --depth 1 https://github.com/Lamtran213/CameraProject.git /tmp/pose-src
+          test -f /tmp/action-src/stgcn/tsstg-model.pth
+          test -f /tmp/pose-src/CameraProject/yolov8n-pose.pt
+          test $(wc -c < /tmp/action-src/stgcn/tsstg-model.pth) -gt 10000000
+          test $(wc -c < /tmp/pose-src/CameraProject/yolov8n-pose.pt) -gt 5000000
+          mkdir -p models/action_candidates vendor/stgcn action_validation
+          cp /tmp/action-src/stgcn/tsstg-model.pth models/action_candidates/bigtuo__tsstg-model.pth
+          cp /tmp/pose-src/CameraProject/yolov8n-pose.pt models/action_candidates/yolov8n-pose.pt
+          cp /tmp/action-src/stgcn/Models.py vendor/stgcn/Models.py
+          cp /tmp/action-src/stgcn/Utils.py vendor/stgcn/Utils.py
+          cp /tmp/action-src/stgcn/pose_utils.py vendor/stgcn/pose_utils.py
+          touch vendor/stgcn/__init__.py
+          sha256sum models/action_candidates/bigtuo__tsstg-model.pth models/action_candidates/yolov8n-pose.pt > models/action_candidates/ACTION_SHA256SUMS.txt
 
-      - name: Inventory actual binary weights
+      - name: Install real action inference runtime
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics opencv-python-headless
+
+      - name: Verify pose model on project worker
         run: |
           python - <<'PY'
+          import json
           from pathlib import Path
-          import hashlib, json
-          root = Path('/tmp/action-models')
-          rows = []
-          for p in root.rglob('*'):
-              if not p.is_file() or p.suffix.lower() not in {'.pth','.pt','.onnx','.h5','.ckpt'}:
-                  continue
-              size = p.stat().st_size
-              sha = hashlib.sha256(p.read_bytes()).hexdigest() if size < 300_000_000 else 'SKIPPED_LARGE'
-              rows.append({'path':str(p.relative_to(root)),'size':size,'sha256':sha})
-          rows.sort(key=lambda x:x['size'], reverse=True)
-          Path('action_model_inventory.json').write_text(json.dumps(rows,indent=2),encoding='utf-8')
-          print(json.dumps(rows,indent=2))
+          from ultralytics import YOLO
+          m=YOLO('models/action_candidates/yolov8n-pose.pt')
+          r=m.predict('model_test_inputs/v2_worker_crop.jpg',imgsz=640,conf=0.15,verbose=False)[0]
+          kp=0 if r.keypoints is None or r.keypoints.data is None else int(r.keypoints.data.shape[0])
+          info={'pose_people':0 if r.boxes is None else len(r.boxes),'keypoint_sets':kp,'keypoint_shape':None if kp==0 else list(r.keypoints.data.shape)}
+          Path('action_validation/pose_smoke.json').write_text(json.dumps(info,indent=2),encoding='utf-8')
+          assert kp > 0, info
+          print(info)
           PY
 
-      - name: Copy lightweight action checkpoint if present
+      - name: Run real TSSTG sequence inference on original Video 1 clip
         run: |
-          set -euxo pipefail
-          mkdir -p models/action_candidates
-          # Only copy files whose path/name explicitly indicates action/fall/STGCN/TSSTG,
-          # avoiding unrelated YOLO or pose backbones.
+          python action_engine.py action_test_inputs/v1_entering_forklift_4_10s.mp4 --output action_validation/v1_entering_forklift_action.json --stride 5
+
+      - name: Validate action result quality gates
+        run: |
           python - <<'PY'
+          import json
           from pathlib import Path
-          import shutil, json
-          root=Path('/tmp/action-models')
-          out=Path('models/action_candidates')
-          copied=[]
-          keywords=('action','fall','stgcn','tsstg','lstm')
-          for p in root.rglob('*'):
-              if not p.is_file() or p.suffix.lower() not in {'.pth','.pt','.onnx','.h5','.ckpt'}:
-                  continue
-              low=str(p).lower()
-              if not any(k in low for k in keywords):
-                  continue
-              size=p.stat().st_size
-              if size < 100_000 or size > 100_000_000:
-                  continue
-              dest=out/(p.parent.parent.name+'__'+p.name)
-              shutil.copy2(p,dest)
-              copied.append({'file':str(dest),'size':size})
-          Path('action_model_copied.json').write_text(json.dumps(copied,indent=2),encoding='utf-8')
-          print(copied)
+          p=Path('action_validation/v1_entering_forklift_action.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          summary={
+            'status':d['status'],
+            'frame_count':d['frame_count'],
+            'pose_frames_detected':d['pose_frames_detected'],
+            'pose_coverage':d['pose_coverage'],
+            'dominant_action':d['dominant_action'],
+            'dominant_confidence':d['dominant_confidence'],
+            'window_count':len(d['windows']),
+            'windows':[{
+              'start_time_s':w['start_time_s'],
+              'end_time_s':w['end_time_s'],
+              'action':w['action'],
+              'confidence':w['confidence'],
+              'pose_coverage':w['pose_coverage'],
+            } for w in d['windows']]
+          }
+          Path('action_validation/summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          assert d['pose_coverage'] >= 0.50, summary
+          assert len(d['windows']) >= 1, summary
+          assert d['dominant_action'] in ['Standing','Walking','Sitting','Lying Down','Stand up','Sit down','Fall Down']
+          print(json.dumps(summary,indent=2))
           PY
 
-      - name: Commit discovery evidence and copied candidate
+      - name: Commit real action model and inference evidence
+        if: always()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add action_model_inventory.json action_model_copied.json models/action_candidates || true
+          git add models/action_candidates/yolov8n-pose.pt models/action_candidates/bigtuo__tsstg-model.pth models/action_candidates/ACTION_SHA256SUMS.txt vendor/stgcn action_validation || true
           if git diff --cached --quiet; then
-            echo 'No action weight found in Git repositories.'
+            echo 'No action inference changes.'
           else
-            git commit -m 'models: Git-pulled action-recognition weight inventory [skip ci]'
+            git commit -m 'test: real TSSTG action inference on forklift clip [skip ci]'
+            git pull --rebase || true
             git push
           fi
