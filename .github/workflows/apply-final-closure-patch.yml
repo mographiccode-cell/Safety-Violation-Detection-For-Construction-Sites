@@ -1,0 +1,37 @@
+name: Apply Final Closure Patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'final-closure-patch-trigger.txt'
+      - '.github/workflows/apply-final-closure-patch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote enhanced production pipeline
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('from combined_pipeline import CombinedSafetyPipeline', 'from enhanced_pipeline import TiledEquipmentCombinedPipeline')
+          s=s.replace('pipeline = CombinedSafetyPipeline(engine)', 'pipeline = TiledEquipmentCombinedPipeline(engine)')
+          p.write_text(s, encoding='utf-8')
+          PY
+          python -m py_compile app.py enhanced_pipeline.py ensemble_engine.py action_engine.py track_action_manager.py combined_pipeline.py
+      - name: Commit promoted pipeline
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.py
+          git commit -m 'feat: promote precision tiled machinery pipeline to web runtime' || true
+          git pull --rebase || true
+          git push || true
