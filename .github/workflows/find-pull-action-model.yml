@@ -26,9 +26,10 @@ jobs:
           git clone --depth 1 https://github.com/Lamtran213/CameraProject.git /tmp/pose-src
           test -f /tmp/action-src/stgcn/tsstg-model.pth
           test -f /tmp/pose-src/CameraProject/yolov8n-pose.pt
-          test -f /tmp/action-src/test.mp4
+          test -f /tmp/action-src/pose_test1.mp4
           test $(wc -c < /tmp/action-src/stgcn/tsstg-model.pth) -gt 10000000
           test $(wc -c < /tmp/pose-src/CameraProject/yolov8n-pose.pt) -gt 5000000
+          test $(wc -c < /tmp/action-src/pose_test1.mp4) -gt 500000
           mkdir -p models/action_candidates vendor/stgcn action_validation
           cp /tmp/action-src/stgcn/tsstg-model.pth models/action_candidates/bigtuo__tsstg-model.pth
           cp /tmp/pose-src/CameraProject/yolov8n-pose.pt models/action_candidates/yolov8n-pose.pt
@@ -58,11 +59,14 @@ jobs:
           print(info)
           PY
 
-      - name: Create deterministic temporal validation clip from cloned GitHub video
+      - name: Create compact real temporal validation clip
         run: |
           set -euxo pipefail
-          ffmpeg -y -i /tmp/action-src/test.mp4 -t 8 -vf "fps=10,scale=640:-2" -an action_validation/source_test_8s.mp4
-          ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames,width,height,r_frame_rate -of json action_validation/source_test_8s.mp4 > action_validation/source_test_video_info.json
+          ffmpeg -y -i /tmp/action-src/pose_test1.mp4 -t 4 -vf "fps=10,scale=640:-2" -an action_validation/source_pose_test_4s.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames,width,height,r_frame_rate,duration -of json action_validation/source_pose_test_4s.mp4 > action_validation/source_test_video_info.json
+          frames=$(ffprobe -v error -select_streams v:0 -count_frames -show_entries stream=nb_read_frames -of csv=p=0 action_validation/source_pose_test_4s.mp4)
+          echo "decoded frames=$frames"
+          test "$frames" -ge 30
 
       - name: Run real TSSTG on real source video
         run: |
@@ -74,7 +78,7 @@ jobs:
               from action_engine import ActionRecognitionEngine
               engine=ActionRecognitionEngine()
               status['engine_status']=engine.status()
-              result=engine.analyze_video('action_validation/source_test_8s.mp4', stride=5)
+              result=engine.analyze_video('action_validation/source_pose_test_4s.mp4', stride=5)
               Path('action_validation/source_test_action.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
               status.update({
                   'status':'ok','pose_coverage':result['pose_coverage'],
@@ -94,15 +98,14 @@ jobs:
           import json, cv2
           from pathlib import Path
           p='action_test_inputs/v1_entering_forklift_4_10s.mp4'
-          cap=cv2.VideoCapture(p)
-          count=0
+          cap=cv2.VideoCapture(p); count=0
           while True:
               ok,_=cap.read()
               if not ok: break
               count+=1
           cap.release()
           d={'file':p,'decoded_frames':count,'tsstg_minimum_frames':30,'valid_for_action_test':count>=30,
-             'note':'This transferred clip is not used as Action AI proof when below 30 frames.'}
+             'note':'Transferred project clip is not used as Action AI proof when below 30 frames.'}
           Path('action_validation/forklift_transfer_status.json').write_text(json.dumps(d,indent=2),encoding='utf-8')
           print(d)
           PY
@@ -113,7 +116,7 @@ jobs:
           import json
           from pathlib import Path
           diag=json.loads(Path('action_validation/source_action_diagnostic.json').read_text(encoding='utf-8'))
-          summary={'status':diag.get('status'),'quality_gate':False}
+          summary={'status':diag.get('status'),'quality_gate':False,'validation_video':'Bigtuo pose_test1.mp4 (Git-cloned)'}
           if diag.get('status')=='ok':
               d=json.loads(Path('action_validation/source_test_action.json').read_text(encoding='utf-8'))
               summary.update({
@@ -126,14 +129,15 @@ jobs:
                            for w in d['windows']]
               })
           Path('action_validation/summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
-          assert summary['quality_gate'], summary
           print(json.dumps(summary,indent=2))
+          if not summary['quality_gate']:
+              raise SystemExit(2)
           PY
 
       - name: Commit real action evidence
         if: always()
         run: |
-          rm -f action_validation/source_test_8s.mp4
+          rm -f action_validation/source_pose_test_4s.mp4
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add models/action_candidates/yolov8n-pose.pt models/action_candidates/bigtuo__tsstg-model.pth models/action_candidates/ACTION_SHA256SUMS.txt vendor/stgcn action_validation || true
