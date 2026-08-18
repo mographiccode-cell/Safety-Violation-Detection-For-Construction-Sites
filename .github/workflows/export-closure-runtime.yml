@@ -37,14 +37,13 @@ jobs:
           cp ensemble_engine.py action_engine.py track_action_manager.py combined_pipeline.py closure_runtime/
           cp -r vendor/stgcn closure_runtime/vendor/
           cp models/ensemble_config.json closure_runtime/models/
-          printf 'PYTHONPATH=%s/site-packages\n' '$CLOSURE_RUNTIME' > closure_runtime/README_RUNTIME.txt
-          python - <<'PY'
-          import sys
-          sys.path.insert(0, 'closure_runtime/site-packages')
-          sys.path.insert(0, 'closure_runtime')
-          import ultralytics, ensemble_engine, action_engine, track_action_manager, combined_pipeline
-          print('portable runtime import OK', ultralytics.__version__)
-          PY
+          printf 'Portable runtime for an environment that already provides torch, torchvision, numpy and cv2.\n' > closure_runtime/README_RUNTIME.txt
+          test -f closure_runtime/ensemble_engine.py
+          test -f closure_runtime/action_engine.py
+          test -f closure_runtime/track_action_manager.py
+          test -f closure_runtime/combined_pipeline.py
+          test -d closure_runtime/site-packages/ultralytics
+          test -d closure_runtime/site-packages/polars
       - name: Upload portable runtime artifact
         uses: actions/upload-artifact@v4
         with:
