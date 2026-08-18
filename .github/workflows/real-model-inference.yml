@@ -19,6 +19,7 @@ jobs:
       SUPERVISOR_USER: supervisor
       SUPERVISOR_PASSWORD: Safety@2026!
       SECRET_KEY: github-actions-validation-key
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
 
