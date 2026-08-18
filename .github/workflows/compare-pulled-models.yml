@@ -19,6 +19,18 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Mark comparison runner started
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p candidate_model_results
+          date -u +'%Y-%m-%dT%H:%M:%SZ' > candidate_model_results/RUNNER_STARTED.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add candidate_model_results/RUNNER_STARTED.txt
+          git commit -m 'test: candidate comparison runner started [skip ci]'
+          git push
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
