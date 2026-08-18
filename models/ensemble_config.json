@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "selected_models": {
     "ppe_primary": {
       "path": "models/candidates/prodbykosta_ppe_best.pt",
@@ -31,9 +31,13 @@
   },
   "thresholds": {
     "person_min_confidence": 0.25,
+    "single_model_person_min_confidence": 0.70,
     "ppe_positive_min_confidence": 0.40,
     "machinery_min_confidence": 0.45,
     "vehicle_min_confidence": 0.45,
+    "tiled_equipment_candidate_min_confidence": 0.12,
+    "tiled_equipment_window_frames": 5,
+    "tiled_equipment_required_frames": 3,
     "auxiliary_hazard_min_confidence": 0.35,
     "auxiliary_equipment_fallback_min_confidence": 0.55,
     "iou_model_agreement": 0.20,
@@ -46,15 +50,18 @@
     "action_fall_min_confidence": 0.50
   },
   "safety_rules": {
+    "worker_precision": "A Person seen by only one PPE/construction detector must be at least 70% confidence; two-model Person agreement may use the base person threshold.",
     "helmet_safe": "Require overlapping Helmet/Hardhat confirmation from BOTH PPE models and temporal confirmation in at least 3 of 5 inference frames.",
     "vest_safe": "Require overlapping Vest/Safety Vest confirmation from BOTH PPE models and temporal confirmation in at least 3 of 5 inference frames.",
     "ppe_disagreement": "Never mark SAFE when the PPE models disagree.",
-    "machinery": "Use construction_secondary machinery/vehicle first; use auxiliary construction-machine only as a high-confidence fallback.",
+    "machinery": "Use native construction_secondary machinery/vehicle detections first. If native full-frame machinery is absent, run real construction-model inference on overlapping horizontal tiles; only machinery candidates recurring in at least 3 of 5 analyzed frames may create dynamic equipment zones.",
+    "tiled_machinery_honesty": "The tile path changes scale/context only. Class name and confidence remain direct construction-model outputs; no manual equipment label is introduced.",
     "missing_ppe": "Never infer missing PPE from a single absent positive detection. Prefer explicit negative class plus temporal evidence.",
     "unsafe_behavior_auxiliary": "fall_hazard, unsafe_ladder_use, phone-usage and no-fall-protection from the auxiliary detector require at least 3 positive observations in the last 5 inference frames.",
     "sequence_action": "Use real YOLO Pose + TSSTG over 30 tracked pose samples. Display only the seven model-native action names. Never rename an action as Entering Forklift.",
     "fall_down_action": "TSSTG Fall Down becomes a CRITICAL unsafe-action hazard only when pose coverage is at least 50% and action confidence is at least 50%.",
     "auxiliary_false_positive_control": "A single auxiliary-model hazard detection never creates a confirmed behavior incident.",
+    "geometry_clamp": "Clamp the tracked worker foot point to image bounds before restricted-zone polygon tests.",
     "distance": "Worker-equipment distance is reported in pixels unless camera calibration/homography is configured; no uncalibrated meter claim is allowed."
   }
 }
