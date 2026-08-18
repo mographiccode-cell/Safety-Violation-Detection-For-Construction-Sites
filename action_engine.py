@@ -30,6 +30,13 @@ ACTION_NAMES = [
     "Fall Down",
 ]
 
+# Bigtuo source deletes flattened keypoint elements 3..14 before TSSTG,
+# which removes COCO keypoints 1..4 (eyes + ears).  The retained 13 joints are:
+# nose, shoulders, elbows, wrists, hips, knees, ankles. TSSTG then appends
+# shoulder-center as node 14. This yields 14 nodes * 3 channels = 42 features,
+# exactly matching the trained checkpoint BatchNorm layout.
+TSSTG_COCO_INDICES = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+
 
 def _box_iou(a: Sequence[float], b: Sequence[float]) -> float:
     ax1, ay1, ax2, ay2 = map(float, a)
@@ -64,18 +71,18 @@ class TSSTGSequenceModel:
 
     @torch.inference_mode()
     def predict(self, points: np.ndarray, image_size: Tuple[int, int]) -> np.ndarray:
-        """points shape: (T, 17, 3), channels x/y/keypoint confidence."""
+        """Predict from YOLO COCO pose sequence in shape (T, 17, 3)."""
         if points.ndim != 3 or points.shape[1:] != (17, 3):
-            raise ValueError(f"Expected pose sequence (T,17,3), got {points.shape}")
+            raise ValueError(f"Expected YOLO pose sequence (T,17,3), got {points.shape}")
         if len(points) < 2:
             raise ValueError("TSSTG requires at least 2 temporal pose frames")
 
-        pts = points.astype(np.float32, copy=True)
+        # Match the exact source preprocessing used with this checkpoint.
+        pts = points[:, TSSTG_COCO_INDICES, :].astype(np.float32, copy=True)  # (T,13,3)
         pts[:, :, :2] = normalize_points_with_size(pts[:, :, :2], image_size[0], image_size[1])
         pts[:, :, :2] = scale_pose(pts[:, :, :2])
-        # TSSTG graph expects the original 17 COCO nodes plus the shoulder-center node.
         shoulder_center = np.expand_dims((pts[:, 1, :] + pts[:, 2, :]) / 2.0, 1)
-        pts = np.concatenate((pts, shoulder_center), axis=1)
+        pts = np.concatenate((pts, shoulder_center), axis=1)  # (T,14,3) => 42 BN features
 
         pts_t = torch.tensor(pts, dtype=torch.float32, device=self.device).permute(2, 0, 1)[None, :]
         mot = pts_t[:, :2, 1:, :] - pts_t[:, :2, :-1, :]
@@ -84,7 +91,7 @@ class TSSTGSequenceModel:
 
 
 class ActionRecognitionEngine:
-    """YOLOv8 Pose -> 17 COCO keypoints -> real TSSTG action recognition."""
+    """YOLOv8 Pose -> 17 COCO keypoints -> source-compatible TSSTG sequence AI."""
 
     def __init__(
         self,
@@ -111,6 +118,8 @@ class ActionRecognitionEngine:
             "action_model": str(self.action_weight_path),
             "action_classes": ACTION_NAMES,
             "sequence_length": self.sequence_length,
+            "source_joint_indices": TSSTG_COCO_INDICES,
+            "tsstg_graph_nodes": 14,
             "device": self.action.device,
         }
 
@@ -224,10 +233,7 @@ class ActionRecognitionEngine:
             })
             windows.append(result)
 
-        mean_probs = {
-            name: float(np.mean([w["probabilities"][name] for w in windows]))
-            for name in ACTION_NAMES
-        }
+        mean_probs = {name: float(np.mean([w["probabilities"][name] for w in windows])) for name in ACTION_NAMES}
         dominant = max(mean_probs, key=mean_probs.get)
         return {
             "status": "ok",
