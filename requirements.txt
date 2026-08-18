@@ -10,4 +10,5 @@ pygame
 pyttsx3
 python-bidi
 opencv-python
-torch 
+torch
+pytest>=8.0.0
