@@ -10,8 +10,6 @@ on:
 permissions:
   contents: read
 
-actions:
-
 jobs:
   export:
     runs-on: ubuntu-latest
