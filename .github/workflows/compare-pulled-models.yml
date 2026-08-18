@@ -1,0 +1,120 @@
+name: Compare Pulled Safety Models
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'candidate-model-test-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install inference runtime
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade ultralytics pillow
+
+      - name: Run fair inference comparison
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, traceback
+          from pathlib import Path
+          from ultralytics import YOLO
+
+          inputs = sorted(Path('model_test_inputs').glob('*.jpg'))
+          out_dir = Path('candidate_model_results')
+          out_dir.mkdir(exist_ok=True)
+          models = [
+              ('prodbykosta_ppe', Path('models/candidates/prodbykosta_ppe_best.pt')),
+              ('prodbykosta_person', Path('models/candidates/prodbykosta_person_yolo12n.pt')),
+              ('snehil_yolov8n_ppe', Path('models/candidates/snehil_yolov8n_ppe_best.pt')),
+          ]
+
+          summary = {}
+          model_info = {}
+          loaded = {}
+          for tag, model_path in models:
+              try:
+                  m = YOLO(str(model_path))
+                  loaded[tag] = m
+                  model_info[tag] = {
+                      'path': str(model_path),
+                      'status': 'ok',
+                      'names': {str(k): v for k, v in m.names.items()},
+                  }
+              except Exception as exc:
+                  model_info[tag] = {'path': str(model_path), 'status':'error', 'error': f'{type(exc).__name__}: {exc}'}
+
+          for image in inputs:
+              summary[image.name] = {}
+              for tag, model_path in models:
+                  payload = {
+                      'model_tag': tag,
+                      'model_path': str(model_path),
+                      'image': image.name,
+                      'status': 'error',
+                      'detections': [],
+                  }
+                  if tag not in loaded:
+                      payload['error'] = model_info[tag].get('error','load failed')
+                  else:
+                      try:
+                          m = loaded[tag]
+                          payload['names'] = {str(k): v for k, v in m.names.items()}
+                          result = m.predict(source=str(image), imgsz=640, conf=0.15, iou=0.45, verbose=False)[0]
+                          payload['image_shape'] = [int(result.orig_shape[0]), int(result.orig_shape[1])]
+                          if result.boxes is not None:
+                              for box in result.boxes:
+                                  cls_id = int(box.cls.item())
+                                  payload['detections'].append({
+                                      'class_id': cls_id,
+                                      'class_name': m.names[cls_id],
+                                      'confidence': round(float(box.conf.item()), 6),
+                                      'xyxy': [round(float(x),3) for x in box.xyxy[0].tolist()],
+                                  })
+                          payload['status'] = 'ok'
+                      except Exception as exc:
+                          payload['error'] = f'{type(exc).__name__}: {exc}'
+                          payload['traceback'] = traceback.format_exc()[-4000:]
+                  (out_dir / f'{image.stem}__{tag}.json').write_text(json.dumps(payload,indent=2),encoding='utf-8')
+                  summary[image.name][tag] = {
+                      'status': payload['status'],
+                      'count': len(payload['detections']),
+                      'classes': [d['class_name'] for d in payload['detections']],
+                      'confidences': [d['confidence'] for d in payload['detections']],
+                      'error': payload.get('error'),
+                  }
+
+          (out_dir/'model_info.json').write_text(json.dumps(model_info,indent=2),encoding='utf-8')
+          (out_dir/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          print(json.dumps({'models':model_info,'results':summary},indent=2))
+          PY
+
+      - name: Commit comparison results
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add candidate_model_results/*.json
+          if git diff --cached --quiet; then
+            echo 'No candidate result changes.'
+          else
+            git commit -m 'test: pulled candidate model comparison results [skip ci]'
+            git push
+          fi
