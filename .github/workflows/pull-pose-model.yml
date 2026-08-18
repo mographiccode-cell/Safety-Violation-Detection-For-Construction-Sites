@@ -17,40 +17,50 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Clone repository containing pose ONNX
+      - name: Clone repository containing real YOLOv8 pose PT
         run: |
           set -euxo pipefail
           rm -rf /tmp/pose-src
           git clone --depth 1 https://github.com/Lamtran213/CameraProject.git /tmp/pose-src
-          test -f /tmp/pose-src/CameraProject/yolov8n-pose.onnx
-          bytes=$(wc -c < /tmp/pose-src/CameraProject/yolov8n-pose.onnx)
+          src=/tmp/pose-src/CameraProject/yolov8n-pose.pt
+          test -f "$src"
+          bytes=$(wc -c < "$src")
           echo "pose bytes=$bytes"
-          test "$bytes" -gt 1000000
-          if head -c 100 /tmp/pose-src/CameraProject/yolov8n-pose.onnx | grep -q 'git-lfs'; then
+          test "$bytes" -gt 5000000
+          if head -c 100 "$src" | grep -q 'git-lfs'; then
             echo 'ERROR: pose file is an LFS pointer, not a real model'
             exit 1
           fi
           mkdir -p models/action_candidates
-          cp /tmp/pose-src/CameraProject/yolov8n-pose.onnx models/action_candidates/yolov8n-pose.onnx
-          sha256sum models/action_candidates/yolov8n-pose.onnx > models/action_candidates/yolov8n-pose.sha256
-      - name: Verify with ONNX Runtime and Ultralytics
+          cp "$src" models/action_candidates/yolov8n-pose.pt
+          sha256sum models/action_candidates/yolov8n-pose.pt > models/action_candidates/yolov8n-pose.sha256
+      - name: Verify real pose inference on project frame
         run: |
           python -m pip install --upgrade pip
-          pip install ultralytics onnxruntime opencv-python-headless
+          pip install ultralytics opencv-python-headless
           python - <<'PY'
-          import json
+          import json, cv2
           from pathlib import Path
-          import onnxruntime as ort
           from ultralytics import YOLO
-          p='models/action_candidates/yolov8n-pose.onnx'
-          sess=ort.InferenceSession(p, providers=['CPUExecutionProvider'])
-          model=YOLO(p, task='pose')
+          p='models/action_candidates/yolov8n-pose.pt'
+          model=YOLO(p)
+          image='model_test_inputs/v2_worker_crop.jpg'
+          result=model.predict(image, imgsz=640, conf=0.15, verbose=False)[0]
+          people=int(len(result.boxes)) if result.boxes is not None else 0
+          keypoint_sets=0
+          shape=None
+          if result.keypoints is not None and result.keypoints.data is not None:
+              keypoint_sets=int(result.keypoints.data.shape[0])
+              shape=list(result.keypoints.data.shape)
           info={
             'size':Path(p).stat().st_size,
-            'onnx_inputs':[(x.name,x.shape) for x in sess.get_inputs()],
-            'onnx_outputs':[(x.name,x.shape) for x in sess.get_outputs()],
-            'ultralytics_load':'PASS'
+            'ultralytics_load':'PASS',
+            'test_image':image,
+            'person_boxes':people,
+            'keypoint_sets':keypoint_sets,
+            'keypoints_shape':shape,
           }
+          assert keypoint_sets > 0, info
           Path('models/action_candidates/yolov8n-pose.info.json').write_text(json.dumps(info,indent=2),encoding='utf-8')
           print(json.dumps(info,indent=2))
           PY
@@ -58,6 +68,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add models/action_candidates/yolov8n-pose.onnx models/action_candidates/yolov8n-pose.sha256 models/action_candidates/yolov8n-pose.info.json
-          git commit -m 'models: pull real YOLOv8 pose ONNX from GitHub [skip ci]'
+          git add models/action_candidates/yolov8n-pose.pt models/action_candidates/yolov8n-pose.sha256 models/action_candidates/yolov8n-pose.info.json
+          git commit -m 'models: pull real YOLOv8 pose PT from GitHub [skip ci]'
           git push
