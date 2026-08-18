@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "selected_models": {
+    "ppe_primary": {
+      "path": "models/candidates/prodbykosta_ppe_best.pt",
+      "role": "Person and PPE confirmation",
+      "classes": ["Boots", "Ear-protection", "Glass", "Glove", "Helmet", "Mask", "Person", "Vest"]
+    },
+    "construction_secondary": {
+      "path": "models/candidates/snehil_yolov8n_ppe_best.pt",
+      "role": "Construction PPE, machinery and vehicle detection",
+      "classes": ["Hardhat", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest", "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle"]
+    }
+  },
+  "excluded_models": {
+    "models/candidates/prodbykosta_person_yolo12n.pt": "Excluded from the final ensemble after a real project sample was classified as horse instead of person."
+  },
+  "thresholds": {
+    "person_min_confidence": 0.25,
+    "ppe_positive_min_confidence": 0.40,
+    "machinery_min_confidence": 0.45,
+    "vehicle_min_confidence": 0.45,
+    "iou_model_agreement": 0.20,
+    "temporal_window_frames": 5,
+    "temporal_required_frames": 3
+  },
+  "safety_rules": {
+    "helmet_safe": "Require overlapping Helmet/Hardhat confirmation from BOTH selected models and temporal confirmation in at least 3 of 5 frames.",
+    "vest_safe": "Require overlapping Vest/Safety Vest confirmation from BOTH selected models and temporal confirmation in at least 3 of 5 frames.",
+    "ppe_disagreement": "Do not mark worker SAFE. Store status as PPE_NOT_CONFIRMED and continue temporal evaluation.",
+    "machinery": "Use construction_secondary machinery/vehicle detections as equipment candidates, then track equipment and create a dynamic danger zone.",
+    "missing_ppe": "Never infer missing PPE from a single absent detection. Use tracked person + temporal evidence + explicit negative class when available."
+  }
+}
