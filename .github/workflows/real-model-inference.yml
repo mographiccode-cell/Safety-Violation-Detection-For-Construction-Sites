@@ -110,7 +110,7 @@ jobs:
           checks = {
               'action_evidence_status': evidence.get('status') == 'ok',
               'pose_coverage_100pct': float(evidence.get('pose_coverage',0)) == 1.0,
-              'thirty_or_more_pose_frames': int(evidence.get('pose_frames_detected',0)) >= 30,
+              'thirty_or_more_pose_frames': int(evidence.get('detected_pose_frames',0)) >= 30,
               'native_action_class': evidence.get('action') in ACTION_NAMES,
               'source_joint_layout_13_plus_center': len(TSSTG_COCO_INDICES) == 13,
               'action_weights_load': True,
