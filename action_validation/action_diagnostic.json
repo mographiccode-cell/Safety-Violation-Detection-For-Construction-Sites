@@ -1,5 +1,5 @@
 {
-  "status": "error",
+  "status": "ok",
   "source": "Bigtuo/YOLOv7-Pose-Bytetrack-STGCN pose_test1.mp4",
   "frames_requested": 30,
   "engine_status": {
@@ -15,8 +15,27 @@
       "Fall Down"
     ],
     "sequence_length": 30,
+    "source_joint_indices": [
+      0,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "tsstg_graph_nodes": 14,
     "device": "cpu"
   },
-  "error": "RuntimeError: running_mean should contain 54 elements not 42",
-  "traceback": "Traceback (most recent call last):\n  File \"<stdin>\", line 28, in <module>\n  File \"/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/action_engine.py\", line 172, in classify_pose_sequence\n    probabilities = self.action.predict(points, image_size)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/utils/_contextlib.py\", line 124, in decorate_context\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/action_engine.py\", line 82, in predict\n    probabilities = self.model((pts_t, mot))[0].detach().cpu().numpy().astype(float)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1778, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1789, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/vendor/stgcn/Models.py\", line 238, in forward\n    out1 = self.pts_stream(inputs[0])\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1778, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1789, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/vendor/stgcn/Models.py\", line 192, in forward\n    x = self.data_bn(x)\n        ^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1778, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/module.py\", line 1789, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/modules/batchnorm.py\", line 210, in forward\n    return F.batch_norm(\n           ^^^^^^^^^^^^^\n  File \"/home/runner/.local/lib/python3.12/site-packages/torch/nn/functional.py\", line 2898, in batch_norm\n    return torch.batch_norm(\n           ^^^^^^^^^^^^^^^^^\nRuntimeError: running_mean should contain 54 elements not 42\n"
+  "action": "Walking",
+  "confidence": 0.46061399579048157,
+  "pose_coverage": 1.0,
+  "detected_pose_frames": 30,
+  "quality_gate": true
 }

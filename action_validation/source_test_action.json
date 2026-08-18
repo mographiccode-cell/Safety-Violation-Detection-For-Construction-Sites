@@ -1,0 +1,237 @@
+{
+  "status": "ok",
+  "source": "Git-cloned Bigtuo pose_test1.mp4",
+  "frame_count": 30,
+  "fps": 24.0,
+  "image_size": [
+    368,
+    640
+  ],
+  "action": "Walking",
+  "confidence": 0.46061399579048157,
+  "probabilities": {
+    "Standing": 0.3521949052810669,
+    "Walking": 0.46061399579048157,
+    "Sitting": 0.013489180244505405,
+    "Lying Down": 0.02813725173473358,
+    "Stand up": 0.012821975164115429,
+    "Sit down": 0.014735860750079155,
+    "Fall Down": 0.01819894276559353
+  },
+  "detected_pose_frames": 30,
+  "pose_coverage": 1.0,
+  "frame_meta": [
+    {
+      "frame": 0,
+      "pose_detected": true,
+      "person_confidence": 0.9293961524963379,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 1,
+      "pose_detected": true,
+      "person_confidence": 0.9297105073928833,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 2,
+      "pose_detected": true,
+      "person_confidence": 0.92851722240448,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 3,
+      "pose_detected": true,
+      "person_confidence": 0.9295128583908081,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 4,
+      "pose_detected": true,
+      "person_confidence": 0.9287592172622681,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 5,
+      "pose_detected": true,
+      "person_confidence": 0.9237841963768005,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 6,
+      "pose_detected": true,
+      "person_confidence": 0.9229124784469604,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 7,
+      "pose_detected": true,
+      "person_confidence": 0.9202870726585388,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 8,
+      "pose_detected": true,
+      "person_confidence": 0.9181045889854431,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 9,
+      "pose_detected": true,
+      "person_confidence": 0.9168941974639893,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 10,
+      "pose_detected": true,
+      "person_confidence": 0.9184039235115051,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 11,
+      "pose_detected": true,
+      "person_confidence": 0.9173245429992676,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 12,
+      "pose_detected": true,
+      "person_confidence": 0.9185101389884949,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 13,
+      "pose_detected": true,
+      "person_confidence": 0.9139696359634399,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 14,
+      "pose_detected": true,
+      "person_confidence": 0.9196030497550964,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 15,
+      "pose_detected": true,
+      "person_confidence": 0.916338324546814,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 16,
+      "pose_detected": true,
+      "person_confidence": 0.9195658564567566,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 17,
+      "pose_detected": true,
+      "person_confidence": 0.9200457334518433,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 18,
+      "pose_detected": true,
+      "person_confidence": 0.922296941280365,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 19,
+      "pose_detected": true,
+      "person_confidence": 0.9214966297149658,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 20,
+      "pose_detected": true,
+      "person_confidence": 0.9194313287734985,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 21,
+      "pose_detected": true,
+      "person_confidence": 0.917779266834259,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 22,
+      "pose_detected": true,
+      "person_confidence": 0.9165970087051392,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 23,
+      "pose_detected": true,
+      "person_confidence": 0.915795087814331,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 24,
+      "pose_detected": true,
+      "person_confidence": 0.9138416647911072,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 25,
+      "pose_detected": true,
+      "person_confidence": 0.913972020149231,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 26,
+      "pose_detected": true,
+      "person_confidence": 0.9120917320251465,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 27,
+      "pose_detected": true,
+      "person_confidence": 0.9125092625617981,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 28,
+      "pose_detected": true,
+      "person_confidence": 0.9143117070198059,
+      "visible_keypoints": 17
+    },
+    {
+      "frame": 29,
+      "pose_detected": true,
+      "person_confidence": 0.9163596034049988,
+      "visible_keypoints": 17
+    }
+  ],
+  "model_status": {
+    "pose_model": "/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/models/action_candidates/yolov8n-pose.pt",
+    "action_model": "/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/models/action_candidates/bigtuo__tsstg-model.pth",
+    "action_classes": [
+      "Standing",
+      "Walking",
+      "Sitting",
+      "Lying Down",
+      "Stand up",
+      "Sit down",
+      "Fall Down"
+    ],
+    "sequence_length": 30,
+    "source_joint_indices": [
+      0,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "tsstg_graph_nodes": 14,
+    "device": "cpu"
+  },
+  "quality_gate": true
+}
