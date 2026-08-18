@@ -1,0 +1,22 @@
+{
+  "model_tag": "best_pt",
+  "model_path": "best.pt",
+  "image": "v2_8s.jpg",
+  "status": "error",
+  "names": {
+    "0": "construction-machine",
+    "1": "fall_hazard",
+    "2": "no-fall-protection",
+    "3": "no-helmet",
+    "4": "no-safety-glasses",
+    "5": "no-safety-vest",
+    "6": "phone-usage",
+    "7": "poor-housekeeping",
+    "8": "safe-ladder-usage",
+    "9": "unsafe_ladder_use",
+    "10": "unsecure- electricalwires"
+  },
+  "detections": [],
+  "error": "IndexError: list index out of range",
+  "traceback": "Traceback (most recent call last):\n  File \"<stdin>\", line 28, in <module>\nIndexError: list index out of range\n"
+}
