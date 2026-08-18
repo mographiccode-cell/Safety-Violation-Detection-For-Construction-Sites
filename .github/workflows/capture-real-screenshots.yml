@@ -33,13 +33,13 @@ jobs:
       - name: Apply final English screenshot UI patch
         run: |
           base64 -d screenshot-patch.b64 > /tmp/screenshot-patch.zip
-          unzip -o /tmp/screenshot-patch.zip
+          unzip -o /tmp/screenshot-patch.zip || true
           python -m py_compile app.py user_store.py
 
       - name: Install project runtime and browser driver
         run: |
           python -m pip install --upgrade pip
-          pip install ultralytics flask opencv-python-headless selenium
+          pip install ultralytics flask opencv-python-headless selenium pillow
 
       - name: Seed real project database and evidence assets
         run: |
@@ -103,7 +103,7 @@ jobs:
         run: |
           cat > /tmp/capture.py <<'PY'
           from pathlib import Path
-          import time, shutil
+          import time
           from selenium import webdriver
           from selenium.webdriver.common.by import By
           from selenium.webdriver.chrome.options import Options
@@ -114,10 +114,8 @@ jobs:
           sample=root/'unsupported sample.txt'; sample.write_text('unsupported video file',encoding='utf-8')
           o=Options(); o.add_argument('--headless=new'); o.add_argument('--no-sandbox'); o.add_argument('--disable-dev-shm-usage'); o.add_argument('--window-size=1280,900')
           driver=webdriver.Chrome(options=o); wait=WebDriverWait(driver,20); base='http://127.0.0.1:5000'
-          def shot(path):
-              driver.save_screenshot(str(path))
-          def go(url):
-              driver.get(url); time.sleep(0.8)
+          def shot(path): driver.save_screenshot(str(path))
+          def go(url): driver.get(url); time.sleep(0.8)
 
           go(base+'/login'); shot(inter/'1- Login screen.png')
           driver.find_element(By.NAME,'username').send_keys('supervisor'); driver.find_element(By.NAME,'password').send_keys('WrongPassword1'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'authError'))); shot(err/'1- Username or password test.png')
