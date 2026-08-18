@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -102,7 +103,7 @@ class TrackState:
 
 
 class IoUTracker:
-    """Associates real detector boxes across adjacent frames; no synthetic detections."""
+    """Associates real detector boxes across frames; it creates no detections."""
 
     def __init__(self, iou_threshold: float = 0.25, max_age: int = 15, history_len: int = 5):
         self.iou_threshold = iou_threshold
@@ -146,14 +147,23 @@ class IoUTracker:
 
 
 class SafetyEnsembleEngine:
-    """Two real YOLO weights + temporal consensus + worker/equipment relationships."""
+    """Two real safety models + temporal consensus + spatial hazard reasoning."""
 
     def __init__(self, config_path: str = "models/ensemble_config.json"):
         self.config_path = Path(config_path)
         self.config = json.loads(self.config_path.read_text(encoding="utf-8"))
+        root = self.config_path.parent.parent
         selected = self.config["selected_models"]
-        self.primary = YOLO(selected["ppe_primary"]["path"])
-        self.secondary = YOLO(selected["construction_secondary"]["path"])
+        primary_path = Path(selected["ppe_primary"]["path"])
+        secondary_path = Path(selected["construction_secondary"]["path"])
+        if not primary_path.is_absolute():
+            primary_path = root / primary_path
+        if not secondary_path.is_absolute():
+            secondary_path = root / secondary_path
+        self.primary_path = primary_path
+        self.secondary_path = secondary_path
+        self.primary = YOLO(str(primary_path))
+        self.secondary = YOLO(str(secondary_path))
         t = self.config["thresholds"]
         self.person_min = float(t["person_min_confidence"])
         self.ppe_min = float(t["ppe_positive_min_confidence"])
@@ -169,8 +179,8 @@ class SafetyEnsembleEngine:
 
     def model_status(self) -> Dict[str, Any]:
         return {
-            "primary": {"path": self.config["selected_models"]["ppe_primary"]["path"], "classes": self.primary.names},
-            "secondary": {"path": self.config["selected_models"]["construction_secondary"]["path"], "classes": self.secondary.names},
+            "primary": {"path": str(self.primary_path), "classes": self.primary.names},
+            "secondary": {"path": str(self.secondary_path), "classes": self.secondary.names},
             "temporal_rule": f"{self.temporal_required}-of-{self.temporal_window}",
         }
 
@@ -185,14 +195,25 @@ class SafetyEnsembleEngine:
         wanted = set(names)
         return [d for d in dets if d["class_name"] in wanted and d["confidence"] >= min_conf]
 
-    def _person_boxes(self, primary: List[Dict[str, Any]], secondary: List[Dict[str, Any]]) -> List[Box]:
-        candidates = self._by_class(primary, ["Person"], self.person_min) + self._by_class(secondary, ["Person"], self.person_min)
+    def _person_detections(self, primary: List[Dict[str, Any]], secondary: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        candidates = []
+        for source, dets in (("primary", primary), ("secondary", secondary)):
+            for d in self._by_class(dets, ["Person"], self.person_min):
+                candidates.append({"box": d["xyxy"], "confidence": d["confidence"], "sources": [source]})
         candidates.sort(key=lambda d: d["confidence"], reverse=True)
-        boxes: List[Box] = []
+        merged: List[Dict[str, Any]] = []
         for det in candidates:
-            if not any(box_iou(det["xyxy"], existing) > 0.45 for existing in boxes):
-                boxes.append(det["xyxy"])
-        return boxes
+            match = next((x for x in merged if box_iou(det["box"], x["box"]) > 0.45), None)
+            if match:
+                if det["confidence"] > match["confidence"]:
+                    match["box"] = det["box"]
+                    match["confidence"] = det["confidence"]
+                for src in det["sources"]:
+                    if src not in match["sources"]:
+                        match["sources"].append(src)
+            else:
+                merged.append(det.copy())
+        return merged
 
     def _positive_agreement(self, person_box: Box, primary: List[Dict[str, Any]], secondary: List[Dict[str, Any]], primary_class: str, secondary_class: str) -> Dict[str, Any]:
         pa = [d for d in self._by_class(primary, [primary_class], self.ppe_min) if det_center_in_person(d, person_box)]
@@ -233,16 +254,22 @@ class SafetyEnsembleEngine:
             if not zone.get("enabled", True):
                 continue
             polygon = normalized_polygon_to_pixels(zone.get("points", []), frame_shape)
-            if len(polygon) < 3:
-                continue
-            runtime.append({**zone, "polygon_px": polygon})
+            if len(polygon) >= 3:
+                runtime.append({**zone, "polygon_px": polygon})
         return runtime
+
+    @staticmethod
+    def _match_person_detection(track_box: Box, people: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not people:
+            return {"confidence": 0.0, "sources": []}
+        best = max(people, key=lambda p: box_iou(track_box, p["box"]))
+        return best if box_iou(track_box, best["box"]) > 0.20 else {"confidence": 0.0, "sources": []}
 
     def analyze_frame(self, frame: np.ndarray, frame_index: int = 0, fixed_zones: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         primary = self._predict(self.primary, frame)
         secondary = self._predict(self.secondary, frame)
-        person_boxes = self._person_boxes(primary, secondary)
-        tracks = self.tracker.update(person_boxes, frame_index)
+        people = self._person_detections(primary, secondary)
+        tracks = self.tracker.update([p["box"] for p in people], frame_index)
 
         equipment = self._by_class(secondary, ["machinery"], self.machinery_min)
         equipment += self._by_class(secondary, ["vehicle"], self.vehicle_min)
@@ -259,14 +286,28 @@ class SafetyEnsembleEngine:
 
         workers, incidents = [], []
         for tr in tracks:
+            person_det = self._match_person_detection(tr.box, people)
             helmet = self._positive_agreement(tr.box, primary, secondary, "Helmet", "Hardhat")
             vest = self._positive_agreement(tr.box, primary, secondary, "Vest", "Safety Vest")
             no_helmet = self._explicit_negative(tr.box, secondary, "NO-Hardhat")
             no_vest = self._explicit_negative(tr.box, secondary, "NO-Safety Vest")
             fp = foot_point(tr.box)
 
-            active_dynamic = [z for z in danger_zones if point_in_box(fp, z["zone_box"])]
-            proximity_now = bool(active_dynamic)
+            relationships = []
+            for z in danger_zones:
+                equipment_center = center(z["equipment_box"])
+                distance_px = math.hypot(fp[0] - equipment_center[0], fp[1] - equipment_center[1])
+                inside = point_in_box(fp, z["zone_box"])
+                if inside:
+                    relationships.append({
+                        "type": "CLOSE_TO",
+                        "equipment_class": z["equipment_class"],
+                        "equipment_confidence": z["confidence"],
+                        "distance_px": distance_px,
+                        "worker_point": fp,
+                        "equipment_point": equipment_center,
+                    })
+            proximity_now = bool(relationships)
             restricted_hits = [
                 {"id": z.get("id"), "name": z.get("name"), "zone_type": z.get("zone_type", "RESTRICTED")}
                 for z in restricted_zones
@@ -292,16 +333,23 @@ class SafetyEnsembleEngine:
             for zone in restricted_hits:
                 hazards.append({"type": "RESTRICTED_ZONE_ENTRY", "severity": "HIGH", "confidence": 1.0, "zone_id": zone["id"], "zone_name": zone["name"]})
             if proximity_temporal:
-                hazards.append({"type": "DANGEROUS_MACHINE_PROXIMITY", "severity": "CRITICAL", "confidence": max([z["confidence"] for z in active_dynamic], default=1.0)})
+                hazards.append({
+                    "type": "DANGEROUS_MACHINE_PROXIMITY",
+                    "severity": "CRITICAL",
+                    "confidence": max([r["equipment_confidence"] for r in relationships], default=1.0),
+                })
 
             rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
             severity = max((h["severity"] for h in hazards), key=lambda s: rank[s], default="LOW")
             worker = {
                 "track_id": tr.track_id,
                 "box": tr.box,
+                "person_confidence": float(person_det.get("confidence", 0.0)),
+                "person_sources": person_det.get("sources", []),
                 "foot_point": fp,
                 "helmet": {"frame": helmet, "temporal_confirmed": helmet_temporal, "history": list(tr.helmet_history)},
                 "vest": {"frame": vest, "temporal_confirmed": vest_temporal, "history": list(tr.vest_history)},
+                "relationships": relationships,
                 "inside_dynamic_danger_zone": proximity_now,
                 "proximity_temporal_confirmed": proximity_temporal,
                 "restricted_zone_hits": restricted_hits,
@@ -314,20 +362,34 @@ class SafetyEnsembleEngine:
                 if hazard["severity"] in {"HIGH", "CRITICAL"}:
                     incidents.append({"track_id": tr.track_id, **hazard, "frame_index": frame_index})
 
-        safe_restricted = []
+        serialized_restricted = []
         for z in restricted_zones:
             item = {k: v for k, v in z.items() if k != "polygon_px"}
             item["polygon_px"] = z["polygon_px"].tolist()
-            safe_restricted.append(item)
+            serialized_restricted.append(item)
         return {
             "frame_index": frame_index,
             "workers": workers,
             "equipment": equipment,
             "danger_zones": danger_zones,
-            "restricted_zones": safe_restricted,
+            "restricted_zones": serialized_restricted,
             "incidents": incidents,
             "raw": {"primary": primary, "secondary": secondary},
         }
+
+    @staticmethod
+    def _ppe_text(label: str, ppe: Dict[str, Any]) -> str:
+        current = ppe["frame"]
+        history_count = sum(bool(v) for v in ppe["history"])
+        if ppe["temporal_confirmed"]:
+            return f"{label} SAFE {history_count}/{len(ppe['history'])}"
+        if current.get("confirmed"):
+            return f"{label} AI {current['confidence']:.0%} (pending temporal)"
+        primary_seen = current.get("primary_seen", 0.0)
+        secondary_seen = current.get("secondary_seen", 0.0)
+        if primary_seen or secondary_seen:
+            return f"{label} NOT CONFIRMED P:{primary_seen:.0%} S:{secondary_seen:.0%}"
+        return f"{label} NOT CONFIRMED"
 
     def draw_overlay(self, frame: np.ndarray, result: Dict[str, Any]) -> np.ndarray:
         out = frame.copy()
@@ -355,14 +417,29 @@ class SafetyEnsembleEngine:
             sev = w["severity"]
             color = {"LOW": (0, 180, 0), "MEDIUM": (0, 215, 255), "HIGH": (0, 80, 255), "CRITICAL": (0, 0, 255)}[sev]
             cv2.rectangle(out, (x1, y1), (x2, y2), color, 3)
-            cv2.putText(out, f"Worker #{w['track_id']} | {sev}", (x1, max(22, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
-            helmet = "HELMET OK" if w["helmet"]["temporal_confirmed"] else "HELMET ?"
-            vest = "VEST OK" if w["vest"]["temporal_confirmed"] else "VEST ?"
-            cv2.putText(out, f"{helmet} | {vest}", (x1, min(out.shape[0] - 10, y2 + 22)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
-            if w["inside_dynamic_danger_zone"]:
-                cv2.putText(out, "INSIDE MACHINE DANGER ZONE", (x1, min(out.shape[0] - 34, y2 + 45)), cv2.FONT_HERSHEY_SIMPLEX, 0.53, (0, 0, 255), 2)
-            if w.get("restricted_zone_hits"):
-                cv2.putText(out, "RESTRICTED ZONE ENTRY", (x1, min(out.shape[0] - 58, y2 + 68)), cv2.FONT_HERSHEY_SIMPLEX, 0.53, (0, 0, 255), 2)
+            cv2.putText(out, f"Worker #{w['track_id']} | Person {w['person_confidence']:.0%} | {sev}", (x1, max(22, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, color, 2)
+
+            line_y = min(out.shape[0] - 12, y2 + 22)
+            cv2.putText(out, self._ppe_text("Helmet", w["helmet"]), (x1, line_y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
+            line_y = min(out.shape[0] - 12, line_y + 20)
+            cv2.putText(out, self._ppe_text("Vest", w["vest"]), (x1, line_y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
+
+            for relation in w.get("relationships", []):
+                wp = tuple(map(int, relation["worker_point"]))
+                ep = tuple(map(int, relation["equipment_point"]))
+                cv2.line(out, wp, ep, (0, 0, 255), 3)
+                mx, my = (wp[0] + ep[0]) // 2, (wp[1] + ep[1]) // 2
+                cv2.putText(
+                    out,
+                    f"CLOSE_TO {relation['equipment_class']} {relation['equipment_confidence']:.0%} | {relation['distance_px']:.0f}px",
+                    (mx, max(22, my - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (0, 0, 255), 2,
+                )
+
+            if w.get("hazards"):
+                hazards = ", ".join(h["type"] for h in w["hazards"])
+                cv2.putText(out, hazards[:90], (x1, min(out.shape[0] - 34, line_y + 23)), cv2.FONT_HERSHEY_SIMPLEX, 0.44, color, 2)
+            if w["alert"]:
+                cv2.putText(out, "ALERT ACTIVE", (x1, min(out.shape[0] - 10, line_y + 46)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 0, 255), 2)
         return out
 
     def process_video(self, input_path: str, output_path: str, sample_every_n_frames: int = 3, fixed_zones: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
