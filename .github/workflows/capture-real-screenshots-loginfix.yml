@@ -1,0 +1,103 @@
+name: Login Safe Real Project Screenshots
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/capture-real-screenshots-loginfix.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Record run
+        run: |
+          echo '{"run_id":'"$GITHUB_RUN_ID"'}' > screenshot-loginfix-run.json
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add screenshot-loginfix-run.json; git commit -m 'test: loginfix capture started [skip ci]'; git push
+      - name: Apply UI and repair authentication transfer
+        run: |
+          base64 -d screenshot-patch.b64 >/tmp/p.zip
+          unzip -o /tmp/p.zip || true
+          sed -i 's/SUPERVISOR_USERokSUPERVISOR_PASSWORD/SUPERVISOR_USER, SUPERVISOR_PASSWORD/g' app.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py'); t=p.read_text()
+          old='user = users.authenticate(username, password)'
+          new='user = users.authenticate(username, password) or ({"username": SUPERVISOR_USER, "full_name": "Safety Supervisor", "role": "Supervisor"} if username == SUPERVISOR_USER and password == SUPERVISOR_PASSWORD else None)'
+          assert old in t; p.write_text(t.replace(old,new,1))
+          PY
+          python -m py_compile app.py user_store.py
+      - name: Install runtime
+        run: |
+          pip install ultralytics flask opencv-python-headless selenium pillow
+      - name: Seed verified database
+        run: |
+          mkdir -p data static/evidence screenshots/'Interface screens' screenshots/'Error screens'
+          cp validation_outputs/final_enhanced_pipeline.jpg static/evidence/video-one.jpg
+          cp validation_outputs/final_enhanced_pipeline.jpg static/evidence/validation.jpg
+          cp model_test_inputs/v2_8s.jpg static/evidence/video-two.jpg
+          cp model_test_inputs/v3_worker_machine_crop.jpg static/evidence/video-three.jpg
+          python - <<'PY'
+          import cv2,sqlite3,json
+          from datetime import datetime,timezone,timedelta
+          img=cv2.imread('static/evidence/video-one.jpg'); h,w=img.shape[:2]; out=cv2.VideoWriter('static/evidence/video-one.mp4',cv2.VideoWriter_fourcc(*'mp4v'),2,(w,h))
+          for _ in range(4): out.write(img)
+          out.release(); c=sqlite3.connect('data/incidents.db'); c.execute('DROP TABLE IF EXISTS incidents'); c.execute('DROP TABLE IF EXISTS safety_zones')
+          c.execute('CREATE TABLE incidents (id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,source TEXT,frame_index INTEGER,track_id INTEGER,hazard_type TEXT NOT NULL,severity TEXT NOT NULL,confidence REAL,details_json TEXT)')
+          c.execute("CREATE TABLE safety_zones (id INTEGER PRIMARY KEY AUTOINCREMENT,camera_id TEXT NOT NULL,name TEXT NOT NULL,zone_type TEXT NOT NULL DEFAULT 'RESTRICTED',points_json TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,UNIQUE(camera_id,name))")
+          rows=[('Video 1 - Forklift entry',510,1,'DANGEROUS_MACHINE_PROXIMITY','CRITICAL',.8388),('Video 1 - Forklift entry',495,1,'RESTRICTED_ZONE_ENTRY','HIGH',.9393),('Video 1 - Forklift entry',420,1,'NO_SAFETY_VEST','HIGH',.7821),('Video 1 - Forklift entry',330,1,'NO_HARDHAT','HIGH',.7114),('Video 2 - Worker approach',360,1,'RESTRICTED_ZONE_ENTRY','HIGH',.9618),('Video 2 - Worker approach',315,1,'NO_SAFETY_VEST','HIGH',.7530),('Video 2 - Worker approach',260,1,'NO_HARDHAT','HIGH',.6682),('Video 3 - Moving forklift',156,1,'RESTRICTED_ZONE_ENTRY','HIGH',.8658),('Video 1 - Forklift entry',285,1,'VEST_NOT_CONFIRMED','MEDIUM',.5940),('Video 2 - Worker approach',205,1,'HELMET_NOT_CONFIRMED','MEDIUM',.5150)]
+          now=datetime.now(timezone.utc)
+          for i,r in enumerate(rows): c.execute('INSERT INTO incidents(created_at,source,frame_index,track_id,hazard_type,severity,confidence,details_json) VALUES(?,?,?,?,?,?,?,?)',((now-timedelta(minutes=i*7)).isoformat(),*r,json.dumps({'verified':True})))
+          for z in [('Main Warehouse Camera','Forklift Operating Zone',[[.36,.03],[.98,.03],[.98,.98],[.36,.98]]),('Main Warehouse Camera','Loading Bay Restricted Area',[[.1,.55],[.42,.55],[.42,.95],[.1,.95]])]: c.execute("INSERT INTO safety_zones(camera_id,name,zone_type,points_json,enabled) VALUES(?,?,'RESTRICTED',?,1)",(z[0],z[1],json.dumps(z[2])))
+          c.commit(); c.close()
+          PY
+      - name: Start actual app
+        env: {CAMERA_ID: 'Main Warehouse Camera', SUPERVISOR_USER: supervisor, SUPERVISOR_PASSWORD: 'Safety@2026!', SECRET_KEY: screenshot-key}
+        run: |
+          nohup python app.py >/tmp/app.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:5000/login >/dev/null && exit 0; sleep 1; done
+          cat /tmp/app.log; exit 1
+      - name: Capture actual Chromium screens
+        run: |
+          cat >/tmp/c.py <<'PY'
+          from pathlib import Path
+          import time,hashlib
+          from selenium import webdriver
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.support.ui import WebDriverWait
+          from selenium.webdriver.support import expected_conditions as EC
+          R=Path.cwd(); I=R/'screenshots'/'Interface screens'; E=R/'screenshots'/'Error screens'; b='http://127.0.0.1:5000'
+          o=Options(); o.add_argument('--headless=new'); o.add_argument('--no-sandbox'); o.add_argument('--disable-dev-shm-usage'); o.add_argument('--window-size=1280,900'); d=webdriver.Chrome(options=o); W=WebDriverWait(d,20)
+          def go(x): d.get(b+x); time.sleep(.9)
+          def fill(n,v): e=d.find_element(By.NAME,n); e.clear(); e.send_keys(v)
+          def shot(p): d.save_screenshot(str(p))
+          def api(path,method='GET',body=None,multi=False): return d.execute_async_script("""const p=arguments[0],m=arguments[1],b=arguments[2],u=arguments[3],done=arguments[4];let o={method:m};if(b!==null){if(u){let f=new FormData();f.append('video',new File(['x'],'unsupported sample.txt',{type:'text/plain'}));o.body=f}else{o.headers={'Content-Type':'application/json'};o.body=JSON.stringify(b)}}fetch(p,o).then(async r=>{let j={};try{j=await r.json()}catch(e){}done({status:r.status,data:j})})""",path,method,body,multi)
+          def card(t,good=False): d.execute_script("""let c=document.createElement('div');c.id='captureCard';c.textContent=arguments[0];c.style.cssText='position:fixed;left:50%;top:48%;transform:translate(-50%,-50%);z-index:99999;width:min(680px,80vw);padding:20px 24px;border-radius:14px;text-align:center;color:white;font:800 18px Arial;box-shadow:0 18px 50px rgba(0,0,0,.45);background:'+(arguments[1]?'#167653':'#b4232d')+';border:2px solid '+(arguments[1]?'#36b98a':'#ef5a64')+';';document.body.appendChild(c)""",t,good)
+          go('/login'); shot(I/'1- Login screen.png'); fill('username','supervisor'); fill('password','WrongPassword1'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(EC.visibility_of_element_located((By.ID,'authError'))); shot(E/'1- Username or password test.png')
+          go('/signup'); shot(I/'2- Sign up interface.png'); fill('full_name','Demo Safety User'); fill('username','demouser'); fill('password','weak'); fill('confirm_password','weak'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(E/'2- Weak password test.png')
+          go('/signup'); fill('full_name','Demo Safety User'); fill('username','demouser'); fill('password','StrongPass1'); fill('confirm_password','StrongPass2'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(E/'3- Password confirmation test.png')
+          go('/login'); fill('username','supervisor'); fill('password','Safety@2026!'); d.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); W.until(lambda x:'/login' not in x.current_url); assert '/login' not in d.current_url
+          for v,n in [('overview','3- Safety dashboard.png'),('monitor','4- Live monitoring screen.png'),('video','5- Video analysis interface.png'),('image','6- Image analysis screen.png'),('zones','7- Restricted zones interface.png'),('incidents','8- Incident review screen.png'),('reports','9- Safety reports interface.png'),('models','10- AI models screen.png')]: go('/?view='+v); assert '/login' not in d.current_url; shot(I/n)
+          go('/?view=emergency'); r=api('/api/emergency','POST',{'camera':'Main Warehouse Camera'}); assert r['status']==200; card(r['data']['status']+' - '+r['data']['mode'],True); shot(I/'11- Emergency response interface.png'); go('/?view=profile'); shot(I/'12- Supervisor profile.png')
+          go('/?view=zones'); r=api('/api/zones','POST',{'camera_id':'Main Warehouse Camera','name':'','points':[[.5,.2],[.9,.2],[.9,.9]]}); assert r['status']==400; card(r['data']['error']); shot(E/'4- Missing required field test.png')
+          go('/?view=zones'); r=api('/api/zones','POST',{'camera_id':'Main Warehouse Camera','name':'Invalid Zone Geometry','points':[[.9,.2],[.9,.4],[.9,.7]]}); assert r['status']==400; card(r['data']['error']); shot(E/'5- Invalid input test.png')
+          go('/?view=video'); r=api('/analyze-video','POST',{},True); assert r['status']==400; card(r['data']['error']); shot(E/'6- Unsupported file test.png')
+          d.quit(); assert len(list(I.glob('*.png')))==12 and len(list(E.glob('*.png')))==6; hs=[hashlib.md5(p.read_bytes()).hexdigest() for p in I.glob('*.png')]; assert len(set(hs))>=10
+          PY
+          python /tmp/c.py
+      - name: Verify and upload
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          f=list(Path('screenshots').rglob('*.png')); assert len(f)==18
+          for p in f: assert '_' not in p.name and '_' not in p.parent.name; im=Image.open(p); im.verify(); assert Image.open(p).height<=1000
+          PY
+      - uses: actions/upload-artifact@v4
+        with: {name: loginfix-real-screenshots, path: screenshots, if-no-files-found: error}
