@@ -1,6 +1,15 @@
-from collections import deque
+from pathlib import Path
 
-from ensemble_engine import IoUTracker, box_iou, expand_box, foot_point, point_in_box
+from ensemble_engine import (
+    IoUTracker,
+    box_iou,
+    expand_box,
+    foot_point,
+    normalized_polygon_to_pixels,
+    point_in_box,
+    point_in_polygon,
+)
+from zone_store import ZoneStore
 
 
 def test_box_iou_overlap():
@@ -44,3 +53,36 @@ def test_dynamic_danger_zone_excludes_far_worker():
     zone = expand_box(equipment, frame_shape)
     worker = (10, 250, 100, 620)
     assert point_in_box(foot_point(worker), zone) is False
+
+
+def test_normalized_restricted_polygon_hit():
+    polygon = normalized_polygon_to_pixels(
+        [[0.50, 0.20], [0.95, 0.20], [0.95, 0.95], [0.50, 0.95]],
+        (720, 1280),
+    )
+    assert point_in_polygon((900.0, 600.0), polygon) is True
+    assert point_in_polygon((100.0, 600.0), polygon) is False
+
+
+def test_zone_store_persists_normalized_polygon(tmp_path):
+    store = ZoneStore(str(tmp_path / "zones.db"))
+    zone = store.upsert(
+        "cam-1",
+        "Forklift Lane",
+        [[0.4, 0.2], [0.9, 0.2], [0.9, 0.9], [0.4, 0.9]],
+    )
+    assert zone["enabled"] is True
+    assert zone["zone_type"] == "RESTRICTED"
+    assert len(store.list("cam-1", enabled_only=True)) == 1
+    assert store.delete(zone["id"]) is True
+    assert store.list("cam-1") == []
+
+
+def test_zone_store_rejects_pixel_coordinates(tmp_path):
+    store = ZoneStore(str(tmp_path / "zones.db"))
+    try:
+        store.upsert("cam-1", "Bad", [[10, 20], [30, 20], [30, 40]])
+    except ValueError as exc:
+        assert "normalized" in str(exc)
+    else:
+        raise AssertionError("Expected normalized coordinate validation to fail")
