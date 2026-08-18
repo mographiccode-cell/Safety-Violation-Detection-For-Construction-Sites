@@ -1,0 +1,21 @@
+{
+  "stage": "action_engine",
+  "status": "error",
+  "engine_status": {
+    "pose_model": "/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/models/action_candidates/yolov8n-pose.pt",
+    "action_model": "/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/models/action_candidates/bigtuo__tsstg-model.pth",
+    "action_classes": [
+      "Standing",
+      "Walking",
+      "Sitting",
+      "Lying Down",
+      "Stand up",
+      "Sit down",
+      "Fall Down"
+    ],
+    "sequence_length": 30,
+    "device": "cpu"
+  },
+  "error": "ValueError: Need at least 30 frames, video has 4",
+  "traceback": "Traceback (most recent call last):\n  File \"<stdin>\", line 8, in <module>\n  File \"/home/runner/work/Safety-Violation-Detection-For-Construction-Sites/Safety-Violation-Detection-For-Construction-Sites/action_engine.py\", line 213, in analyze_video\n    raise ValueError(f\"Need at least {self.sequence_length} frames, video has {len(poses)}\")\nValueError: Need at least 30 frames, video has 4\n"
+}
