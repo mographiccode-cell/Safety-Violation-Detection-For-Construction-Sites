@@ -1,1 +1,1 @@
-run real YOLO pose plus TSSTG diagnostic attempt 2
+run real TSSTG end-to-end source-video validation attempt 3
