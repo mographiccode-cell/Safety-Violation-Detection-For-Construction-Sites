@@ -92,6 +92,8 @@ class TrackState:
     helmet_history: deque = field(default_factory=lambda: deque(maxlen=5))
     vest_history: deque = field(default_factory=lambda: deque(maxlen=5))
     proximity_history: deque = field(default_factory=lambda: deque(maxlen=5))
+    auxiliary_histories: Dict[str, deque] = field(default_factory=dict)
+    last_incident_frame: Dict[str, int] = field(default_factory=dict)
 
     def update_box(self, box: Box, frame_index: int) -> None:
         self.box = box
@@ -100,6 +102,11 @@ class TrackState:
     @staticmethod
     def confirmed(history: deque, required: int) -> bool:
         return sum(bool(v) for v in history) >= required
+
+    def auxiliary_history(self, class_name: str, maxlen: int) -> deque:
+        if class_name not in self.auxiliary_histories:
+            self.auxiliary_histories[class_name] = deque(maxlen=maxlen)
+        return self.auxiliary_histories[class_name]
 
 
 class IoUTracker:
@@ -147,31 +154,43 @@ class IoUTracker:
 
 
 class SafetyEnsembleEngine:
-    """Two real safety models + temporal consensus + spatial hazard reasoning."""
+    """Real PPE + construction + specialized hazard models with temporal safety reasoning."""
+
+    AUX_BEHAVIORS = {
+        "fall_hazard": "CRITICAL",
+        "unsafe_ladder_use": "HIGH",
+        "phone-usage": "HIGH",
+        "no-fall-protection": "HIGH",
+    }
 
     def __init__(self, config_path: str = "models/ensemble_config.json"):
         self.config_path = Path(config_path)
         self.config = json.loads(self.config_path.read_text(encoding="utf-8"))
         root = self.config_path.parent.parent
         selected = self.config["selected_models"]
-        primary_path = Path(selected["ppe_primary"]["path"])
-        secondary_path = Path(selected["construction_secondary"]["path"])
-        if not primary_path.is_absolute():
-            primary_path = root / primary_path
-        if not secondary_path.is_absolute():
-            secondary_path = root / secondary_path
-        self.primary_path = primary_path
-        self.secondary_path = secondary_path
-        self.primary = YOLO(str(primary_path))
-        self.secondary = YOLO(str(secondary_path))
+
+        def resolve(path: str) -> Path:
+            p = Path(path)
+            return p if p.is_absolute() else root / p
+
+        self.primary_path = resolve(selected["ppe_primary"]["path"])
+        self.secondary_path = resolve(selected["construction_secondary"]["path"])
+        self.auxiliary_path = resolve(selected["hazard_auxiliary"]["path"])
+        self.primary = YOLO(str(self.primary_path))
+        self.secondary = YOLO(str(self.secondary_path))
+        self.auxiliary = YOLO(str(self.auxiliary_path))
+
         t = self.config["thresholds"]
         self.person_min = float(t["person_min_confidence"])
         self.ppe_min = float(t["ppe_positive_min_confidence"])
         self.machinery_min = float(t["machinery_min_confidence"])
         self.vehicle_min = float(t["vehicle_min_confidence"])
+        self.aux_min = float(t["auxiliary_hazard_min_confidence"])
+        self.aux_equipment_min = float(t["auxiliary_equipment_fallback_min_confidence"])
         self.agreement_iou = float(t["iou_model_agreement"])
         self.temporal_window = int(t["temporal_window_frames"])
         self.temporal_required = int(t["temporal_required_frames"])
+        self.incident_cooldown = int(t["incident_cooldown_frames"])
         self.tracker = IoUTracker(history_len=self.temporal_window)
 
     def reset_tracking(self) -> None:
@@ -179,8 +198,9 @@ class SafetyEnsembleEngine:
 
     def model_status(self) -> Dict[str, Any]:
         return {
-            "primary": {"path": str(self.primary_path), "classes": self.primary.names},
-            "secondary": {"path": str(self.secondary_path), "classes": self.secondary.names},
+            "primary": {"path": str(self.primary_path), "classes": self.primary.names, "role": "PPE confirmation"},
+            "secondary": {"path": str(self.secondary_path), "classes": self.secondary.names, "role": "Construction + machinery"},
+            "auxiliary": {"path": str(self.auxiliary_path), "classes": self.auxiliary.names, "role": "Temporal unsafe-hazard evidence"},
             "temporal_rule": f"{self.temporal_required}-of-{self.temporal_window}",
         }
 
@@ -265,19 +285,61 @@ class SafetyEnsembleEngine:
         best = max(people, key=lambda p: box_iou(track_box, p["box"]))
         return best if box_iou(track_box, best["box"]) > 0.20 else {"confidence": 0.0, "sources": []}
 
+    def _aux_behavior_state(self, tr: TrackState, auxiliary: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        states = []
+        for class_name, severity in self.AUX_BEHAVIORS.items():
+            matches = [
+                d for d in auxiliary
+                if d["class_name"] == class_name
+                and d["confidence"] >= self.aux_min
+                and (det_center_in_person(d, tr.box) or box_iou(d["xyxy"], tr.box) >= 0.10)
+            ]
+            current_conf = max([d["confidence"] for d in matches], default=0.0)
+            hist = tr.auxiliary_history(class_name, self.temporal_window)
+            hist.append(current_conf)
+            positives = [float(v) for v in hist if float(v) > 0.0]
+            confirmed = len(positives) >= self.temporal_required
+            states.append({
+                "class_name": class_name,
+                "severity": severity,
+                "current_confidence": current_conf,
+                "history": list(hist),
+                "positive_frames": len(positives),
+                "confirmed": confirmed,
+                "confidence": (sum(positives) / len(positives)) if confirmed else current_conf,
+            })
+        return states
+
+    def _incident_allowed(self, tr: TrackState, hazard: Dict[str, Any], frame_index: int) -> bool:
+        key = hazard["type"]
+        if hazard.get("zone_id") is not None:
+            key += f":{hazard['zone_id']}"
+        last = tr.last_incident_frame.get(key)
+        if last is None or frame_index - last >= self.incident_cooldown:
+            tr.last_incident_frame[key] = frame_index
+            return True
+        return False
+
     def analyze_frame(self, frame: np.ndarray, frame_index: int = 0, fixed_zones: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         primary = self._predict(self.primary, frame)
         secondary = self._predict(self.secondary, frame)
+        auxiliary = self._predict(self.auxiliary, frame)
         people = self._person_detections(primary, secondary)
         tracks = self.tracker.update([p["box"] for p in people], frame_index)
 
-        equipment = self._by_class(secondary, ["machinery"], self.machinery_min)
-        equipment += self._by_class(secondary, ["vehicle"], self.vehicle_min)
+        equipment = [{**d, "source": "secondary"} for d in self._by_class(secondary, ["machinery"], self.machinery_min)]
+        equipment += [{**d, "source": "secondary"} for d in self._by_class(secondary, ["vehicle"], self.vehicle_min)]
+        if not equipment:
+            equipment = [
+                {**d, "source": "auxiliary_fallback"}
+                for d in self._by_class(auxiliary, ["construction-machine"], self.aux_equipment_min)
+            ]
         danger_zones = [
             {
                 "equipment_class": d["class_name"],
                 "confidence": d["confidence"],
                 "equipment_box": d["xyxy"],
+                "equipment_source": d.get("source", "secondary"),
                 "zone_box": expand_box(d["xyxy"], frame.shape[:2]),
             }
             for d in equipment
@@ -291,19 +353,21 @@ class SafetyEnsembleEngine:
             vest = self._positive_agreement(tr.box, primary, secondary, "Vest", "Safety Vest")
             no_helmet = self._explicit_negative(tr.box, secondary, "NO-Hardhat")
             no_vest = self._explicit_negative(tr.box, secondary, "NO-Safety Vest")
+            behavior_states = self._aux_behavior_state(tr, auxiliary)
             fp = foot_point(tr.box)
 
             relationships = []
             for z in danger_zones:
                 equipment_center = center(z["equipment_box"])
                 distance_px = math.hypot(fp[0] - equipment_center[0], fp[1] - equipment_center[1])
-                inside = point_in_box(fp, z["zone_box"])
-                if inside:
+                if point_in_box(fp, z["zone_box"]):
                     relationships.append({
                         "type": "CLOSE_TO",
                         "equipment_class": z["equipment_class"],
                         "equipment_confidence": z["confidence"],
+                        "equipment_source": z["equipment_source"],
                         "distance_px": distance_px,
+                        "distance_unit": "pixels_uncalibrated",
                         "worker_point": fp,
                         "equipment_point": equipment_center,
                     })
@@ -323,20 +387,30 @@ class SafetyEnsembleEngine:
 
             hazards: List[Dict[str, Any]] = []
             if no_helmet:
-                hazards.append({"type": "NO_HARDHAT", "severity": "HIGH", "confidence": no_helmet["confidence"]})
+                hazards.append({"type": "NO_HARDHAT", "severity": "HIGH", "confidence": no_helmet["confidence"], "source": "secondary_model"})
             elif len(tr.helmet_history) >= self.temporal_required and not helmet_temporal:
-                hazards.append({"type": "HELMET_NOT_CONFIRMED", "severity": "MEDIUM", "confidence": 1.0})
+                hazards.append({"type": "HELMET_NOT_CONFIRMED", "severity": "MEDIUM", "confidence": 1.0, "source": "model_disagreement_temporal"})
             if no_vest:
-                hazards.append({"type": "NO_SAFETY_VEST", "severity": "HIGH", "confidence": no_vest["confidence"]})
+                hazards.append({"type": "NO_SAFETY_VEST", "severity": "HIGH", "confidence": no_vest["confidence"], "source": "secondary_model"})
             elif len(tr.vest_history) >= self.temporal_required and not vest_temporal:
-                hazards.append({"type": "VEST_NOT_CONFIRMED", "severity": "MEDIUM", "confidence": 1.0})
+                hazards.append({"type": "VEST_NOT_CONFIRMED", "severity": "MEDIUM", "confidence": 1.0, "source": "model_disagreement_temporal"})
+            for behavior in behavior_states:
+                if behavior["confirmed"]:
+                    hazards.append({
+                        "type": behavior["class_name"].upper().replace("-", "_") ,
+                        "severity": behavior["severity"],
+                        "confidence": behavior["confidence"],
+                        "source": "auxiliary_model_3of5",
+                        "positive_frames": behavior["positive_frames"],
+                    })
             for zone in restricted_hits:
-                hazards.append({"type": "RESTRICTED_ZONE_ENTRY", "severity": "HIGH", "confidence": 1.0, "zone_id": zone["id"], "zone_name": zone["name"]})
+                hazards.append({"type": "RESTRICTED_ZONE_ENTRY", "severity": "HIGH", "confidence": 1.0, "source": "tracked_worker_geometry", "zone_id": zone["id"], "zone_name": zone["name"]})
             if proximity_temporal:
                 hazards.append({
                     "type": "DANGEROUS_MACHINE_PROXIMITY",
                     "severity": "CRITICAL",
                     "confidence": max([r["equipment_confidence"] for r in relationships], default=1.0),
+                    "source": "tracked_worker_equipment_geometry_3of5",
                 })
 
             rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
@@ -349,6 +423,7 @@ class SafetyEnsembleEngine:
                 "foot_point": fp,
                 "helmet": {"frame": helmet, "temporal_confirmed": helmet_temporal, "history": list(tr.helmet_history)},
                 "vest": {"frame": vest, "temporal_confirmed": vest_temporal, "history": list(tr.vest_history)},
+                "unsafe_behavior_evidence": behavior_states,
                 "relationships": relationships,
                 "inside_dynamic_danger_zone": proximity_now,
                 "proximity_temporal_confirmed": proximity_temporal,
@@ -359,7 +434,7 @@ class SafetyEnsembleEngine:
             }
             workers.append(worker)
             for hazard in hazards:
-                if hazard["severity"] in {"HIGH", "CRITICAL"}:
+                if hazard["severity"] in {"HIGH", "CRITICAL"} and self._incident_allowed(tr, hazard, frame_index):
                     incidents.append({"track_id": tr.track_id, **hazard, "frame_index": frame_index})
 
         serialized_restricted = []
@@ -374,7 +449,7 @@ class SafetyEnsembleEngine:
             "danger_zones": danger_zones,
             "restricted_zones": serialized_restricted,
             "incidents": incidents,
-            "raw": {"primary": primary, "secondary": secondary},
+            "raw": {"primary": primary, "secondary": secondary, "auxiliary": auxiliary},
         }
 
     @staticmethod
@@ -384,7 +459,7 @@ class SafetyEnsembleEngine:
         if ppe["temporal_confirmed"]:
             return f"{label} SAFE {history_count}/{len(ppe['history'])}"
         if current.get("confirmed"):
-            return f"{label} AI {current['confidence']:.0%} (pending temporal)"
+            return f"{label} AI {current['confidence']:.0%} pending temporal"
         primary_seen = current.get("primary_seen", 0.0)
         secondary_seen = current.get("secondary_seen", 0.0)
         if primary_seen or secondary_seen:
@@ -418,7 +493,6 @@ class SafetyEnsembleEngine:
             color = {"LOW": (0, 180, 0), "MEDIUM": (0, 215, 255), "HIGH": (0, 80, 255), "CRITICAL": (0, 0, 255)}[sev]
             cv2.rectangle(out, (x1, y1), (x2, y2), color, 3)
             cv2.putText(out, f"Worker #{w['track_id']} | Person {w['person_confidence']:.0%} | {sev}", (x1, max(22, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, color, 2)
-
             line_y = min(out.shape[0] - 12, y2 + 22)
             cv2.putText(out, self._ppe_text("Helmet", w["helmet"]), (x1, line_y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 2)
             line_y = min(out.shape[0] - 12, line_y + 20)
@@ -429,17 +503,17 @@ class SafetyEnsembleEngine:
                 ep = tuple(map(int, relation["equipment_point"]))
                 cv2.line(out, wp, ep, (0, 0, 255), 3)
                 mx, my = (wp[0] + ep[0]) // 2, (wp[1] + ep[1]) // 2
-                cv2.putText(
-                    out,
-                    f"CLOSE_TO {relation['equipment_class']} {relation['equipment_confidence']:.0%} | {relation['distance_px']:.0f}px",
-                    (mx, max(22, my - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (0, 0, 255), 2,
-                )
+                cv2.putText(out, f"CLOSE_TO {relation['equipment_class']} {relation['equipment_confidence']:.0%} | {relation['distance_px']:.0f}px", (mx, max(22, my - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (0, 0, 255), 2)
 
+            confirmed_behavior = [b for b in w.get("unsafe_behavior_evidence", []) if b["confirmed"]]
+            if confirmed_behavior:
+                txt = "AI BEHAVIOR: " + ", ".join(f"{b['class_name']} {b['confidence']:.0%}" for b in confirmed_behavior)
+                cv2.putText(out, txt[:100], (x1, min(out.shape[0] - 58, line_y + 23)), cv2.FONT_HERSHEY_SIMPLEX, 0.43, color, 2)
             if w.get("hazards"):
                 hazards = ", ".join(h["type"] for h in w["hazards"])
-                cv2.putText(out, hazards[:90], (x1, min(out.shape[0] - 34, line_y + 23)), cv2.FONT_HERSHEY_SIMPLEX, 0.44, color, 2)
+                cv2.putText(out, hazards[:100], (x1, min(out.shape[0] - 34, line_y + 44)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 2)
             if w["alert"]:
-                cv2.putText(out, "ALERT ACTIVE", (x1, min(out.shape[0] - 10, line_y + 46)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 0, 255), 2)
+                cv2.putText(out, "ALERT ACTIVE", (x1, min(out.shape[0] - 10, line_y + 66)), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 0, 255), 2)
         return out
 
     def process_video(self, input_path: str, output_path: str, sample_every_n_frames: int = 3, fixed_zones: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
