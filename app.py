@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hmac
 import os
 import uuid
+from functools import wraps
 from pathlib import Path
 
 import cv2
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
 from ensemble_engine import SafetyEnsembleEngine
@@ -21,12 +23,27 @@ for folder in (UPLOAD_DIR, OUTPUT_DIR):
 
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR), static_folder=str(BASE_DIR / "static"))
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
+app.secret_key = os.environ.get("SECRET_KEY") or uuid.uuid4().hex + uuid.uuid4().hex
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
+SUPERVISOR_USER = os.environ.get("SUPERVISOR_USER", "supervisor")
+SUPERVISOR_PASSWORD = os.environ.get("SUPERVISOR_PASSWORD", "Safety@2026!")
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "webm"}
 
 engine = SafetyEnsembleEngine(str(BASE_DIR / "models" / "ensemble_config.json"))
 store = IncidentStore(str(BASE_DIR / "data" / "incidents.db"))
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get("authenticated"):
+            if request.path.startswith("/api/") or request.path.startswith("/analyze"):
+                return jsonify({"error": "authentication_required"}), 401
+            return redirect(url_for("login"))
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 def extension(filename: str) -> str:
@@ -39,8 +56,6 @@ def unique_name(filename: str) -> str:
 
 
 def serialize_frame_result(result):
-    # Remove large raw detection lists from the public response while preserving
-    # the real worker/equipment inference values used by the hazard engine.
     return {
         "frame_index": result["frame_index"],
         "workers": result["workers"],
@@ -50,22 +65,37 @@ def serialize_frame_result(result):
     }
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        valid_user = hmac.compare_digest(username, SUPERVISOR_USER)
+        valid_password = hmac.compare_digest(password, SUPERVISOR_PASSWORD)
+        if valid_user and valid_password:
+            session.clear()
+            session["authenticated"] = True
+            session["username"] = SUPERVISOR_USER
+            return redirect(url_for("index"))
+        error = "اسم المستخدم أو كلمة المرور غير صحيحة"
+    return render_template("login.html", error=error)
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.get("/")
+@login_required
 def index():
-    try:
-        return render_template("index.html")
-    except Exception:
-        return jsonify(
-            {
-                "name": "Smart Workplace Safety",
-                "status": "running",
-                "model_status": engine.model_status(),
-                "routes": ["/api/status", "/analyze", "/analyze-video", "/api/incidents", "/api/reports/summary"],
-            }
-        )
+    return render_template("index.html", username=session.get("username", "supervisor"))
 
 
 @app.get("/api/status")
+@login_required
 def status():
     return jsonify(
         {
@@ -78,6 +108,7 @@ def status():
 
 
 @app.post("/analyze")
+@login_required
 def analyze_image():
     if "image" not in request.files:
         return jsonify({"error": "No image provided"}), 400
@@ -112,6 +143,7 @@ def analyze_image():
 
 
 @app.post("/analyze-video")
+@login_required
 def analyze_video():
     if "video" not in request.files:
         return jsonify({"error": "No video provided"}), 400
@@ -145,21 +177,22 @@ def analyze_video():
 
 
 @app.get("/api/incidents")
+@login_required
 def incidents():
     limit = min(max(int(request.args.get("limit", 100)), 1), 500)
     return jsonify({"incidents": store.recent(limit)})
 
 
 @app.get("/api/reports/summary")
+@login_required
 def report_summary():
     return jsonify(store.summary())
 
 
 @app.post("/api/emergency")
+@login_required
 def emergency_response():
     payload = request.get_json(silent=True) or {}
-    # Application-level emergency response proof. Hardware/PLC activation is
-    # deliberately not claimed unless an external controller is configured.
     return jsonify(
         {
             "status": "EMERGENCY_RESPONSE_TRIGGERED",
