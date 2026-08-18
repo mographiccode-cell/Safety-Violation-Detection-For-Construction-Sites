@@ -16,6 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Publish runtime start run id
+        run: |
+          printf '{"run_id":%s,"run_attempt":%s,"commit":"%s","stage":"started"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" > closure_runtime_started_run.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add closure_runtime_started_run.json
+          git commit -m 'ci: closure runtime export started [skip ci]'
+          git push
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -37,12 +45,13 @@ jobs:
           path: closure_runtime
           retention-days: 1
           compression-level: 6
-      - name: Publish runtime run id
+      - name: Publish runtime completion
+        if: always()
         run: |
-          printf '{"run_id":%s,"run_attempt":%s,"commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" > closure_runtime_export_run.json
+          printf '{"run_id":%s,"run_attempt":%s,"commit":"%s","stage":"completed"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" > closure_runtime_export_run.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add closure_runtime_export_run.json
-          git commit -m 'ci: closure runtime artifact ready [skip ci]'
+          git commit -m 'ci: closure runtime artifact ready [skip ci]' || true
           git pull --rebase || true
-          git push
+          git push || true
