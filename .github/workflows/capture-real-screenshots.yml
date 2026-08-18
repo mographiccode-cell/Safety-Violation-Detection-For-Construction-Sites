@@ -34,6 +34,7 @@ jobs:
         run: |
           base64 -d screenshot-patch.b64 > /tmp/screenshot-patch.zip
           unzip -o /tmp/screenshot-patch.zip || true
+          sed -i 's/SUPERVISOR_USERokSUPERVISOR_PASSWORD/SUPERVISOR_USER, SUPERVISOR_PASSWORD/g' app.py
           python -m py_compile app.py user_store.py
 
       - name: Install project runtime and browser driver
@@ -52,21 +53,15 @@ jobs:
           import cv2, sqlite3, json
           from pathlib import Path
           from datetime import datetime, timezone, timedelta
-          img=cv2.imread('static/evidence/video-one.jpg')
-          assert img is not None
-          h,w=img.shape[:2]
-          writer=cv2.VideoWriter('static/evidence/video-one.mp4',cv2.VideoWriter_fourcc(*'mp4v'),2.0,(w,h))
+          img=cv2.imread('static/evidence/video-one.jpg'); assert img is not None
+          h,w=img.shape[:2]; writer=cv2.VideoWriter('static/evidence/video-one.mp4',cv2.VideoWriter_fourcc(*'mp4v'),2.0,(w,h))
           for _ in range(4): writer.write(img)
-          writer.release()
-          assert Path('static/evidence/video-one.mp4').stat().st_size > 1000
-          db=Path('data/incidents.db')
-          conn=sqlite3.connect(db)
-          conn.execute('DROP TABLE IF EXISTS incidents')
-          conn.execute('DROP TABLE IF EXISTS safety_zones')
+          writer.release(); assert Path('static/evidence/video-one.mp4').stat().st_size > 1000
+          db=Path('data/incidents.db'); conn=sqlite3.connect(db)
+          conn.execute('DROP TABLE IF EXISTS incidents'); conn.execute('DROP TABLE IF EXISTS safety_zones')
           conn.execute('CREATE TABLE incidents (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, source TEXT, frame_index INTEGER, track_id INTEGER, hazard_type TEXT NOT NULL, severity TEXT NOT NULL, confidence REAL, details_json TEXT)')
           conn.execute("CREATE TABLE safety_zones (id INTEGER PRIMARY KEY AUTOINCREMENT, camera_id TEXT NOT NULL, name TEXT NOT NULL, zone_type TEXT NOT NULL DEFAULT 'RESTRICTED', points_json TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, UNIQUE(camera_id,name))")
-          rows=[
-          ('Video 1 - Forklift entry',510,1,'DANGEROUS_MACHINE_PROXIMITY','CRITICAL',0.8388),('Video 1 - Forklift entry',495,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9393),('Video 1 - Forklift entry',420,1,'NO_SAFETY_VEST','HIGH',0.7821),('Video 1 - Forklift entry',330,1,'NO_HARDHAT','HIGH',0.7114),('Video 2 - Worker approach',360,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9618),('Video 2 - Worker approach',315,1,'NO_SAFETY_VEST','HIGH',0.7530),('Video 2 - Worker approach',260,1,'NO_HARDHAT','HIGH',0.6682),('Video 3 - Moving forklift',156,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.8658),('Video 1 - Forklift entry',285,1,'VEST_NOT_CONFIRMED','MEDIUM',0.5940),('Video 2 - Worker approach',205,1,'HELMET_NOT_CONFIRMED','MEDIUM',0.5150)]
+          rows=[('Video 1 - Forklift entry',510,1,'DANGEROUS_MACHINE_PROXIMITY','CRITICAL',0.8388),('Video 1 - Forklift entry',495,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9393),('Video 1 - Forklift entry',420,1,'NO_SAFETY_VEST','HIGH',0.7821),('Video 1 - Forklift entry',330,1,'NO_HARDHAT','HIGH',0.7114),('Video 2 - Worker approach',360,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.9618),('Video 2 - Worker approach',315,1,'NO_SAFETY_VEST','HIGH',0.7530),('Video 2 - Worker approach',260,1,'NO_HARDHAT','HIGH',0.6682),('Video 3 - Moving forklift',156,1,'RESTRICTED_ZONE_ENTRY','HIGH',0.8658),('Video 1 - Forklift entry',285,1,'VEST_NOT_CONFIRMED','MEDIUM',0.5940),('Video 2 - Worker approach',205,1,'HELMET_NOT_CONFIRMED','MEDIUM',0.5150)]
           now=datetime.now(timezone.utc)
           for i,row in enumerate(rows): conn.execute('INSERT INTO incidents(created_at,source,frame_index,track_id,hazard_type,severity,confidence,details_json) VALUES(?,?,?,?,?,?,?,?)',((now-timedelta(minutes=i*7)).isoformat(),*row,json.dumps({'verified':True,'source_evidence':row[0]})))
           zones=[('Main Warehouse Camera','Forklift Operating Zone','RESTRICTED',[[0.36,0.03],[0.98,0.03],[0.98,0.98],[0.36,0.98]],1),('Main Warehouse Camera','Loading Bay Restricted Area','RESTRICTED',[[0.10,0.55],[0.42,0.55],[0.42,0.95],[0.10,0.95]],1)]
@@ -82,7 +77,7 @@ jobs:
           SECRET_KEY: screenshot-validation-key
         run: |
           nohup python app.py > /tmp/safety-app.log 2>&1 &
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             if curl -sf http://127.0.0.1:5000/login >/dev/null; then exit 0; fi
             sleep 1
           done
@@ -104,15 +99,14 @@ jobs:
           o=Options(); o.add_argument('--headless=new'); o.add_argument('--no-sandbox'); o.add_argument('--disable-dev-shm-usage'); o.add_argument('--window-size=1280,900')
           driver=webdriver.Chrome(options=o); wait=WebDriverWait(driver,20); base='http://127.0.0.1:5000'
           def shot(path): driver.save_screenshot(str(path))
-          def go(url): driver.get(url); time.sleep(0.8)
+          def go(url): driver.get(url); time.sleep(0.9)
           go(base+'/login'); shot(inter/'1- Login screen.png')
           driver.find_element(By.NAME,'username').send_keys('supervisor'); driver.find_element(By.NAME,'password').send_keys('WrongPassword1'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'authError'))); shot(err/'1- Username or password test.png')
           go(base+'/signup'); shot(inter/'2- Sign up interface.png')
           driver.find_element(By.NAME,'full_name').send_keys('Demo Safety User'); driver.find_element(By.NAME,'username').send_keys('demouser'); driver.find_element(By.NAME,'password').send_keys('weak'); driver.find_element(By.NAME,'confirm_password').send_keys('weak'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(err/'2- Weak password test.png')
           go(base+'/signup'); driver.find_element(By.NAME,'full_name').send_keys('Demo Safety User'); driver.find_element(By.NAME,'username').send_keys('demouser'); driver.find_element(By.NAME,'password').send_keys('StrongPass1'); driver.find_element(By.NAME,'confirm_password').send_keys('StrongPass2'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); wait.until(EC.visibility_of_element_located((By.ID,'signupError'))); shot(err/'3- Password confirmation test.png')
           go(base+'/login'); driver.find_element(By.NAME,'username').send_keys('supervisor'); driver.find_element(By.NAME,'password').send_keys('Safety@2026!'); driver.find_element(By.CSS_SELECTOR,'button[type=submit]').click(); time.sleep(1)
-          for v,n in [('overview','3- Safety dashboard.png'),('monitor','4- Live monitoring screen.png'),('video','5- Video analysis interface.png'),('image','6- Image analysis screen.png'),('zones','7- Restricted zones interface.png'),('incidents','8- Incident review screen.png'),('reports','9- Safety reports interface.png'),('models','10- AI models screen.png')]:
-              go(base+'/?view='+v); shot(inter/n)
+          for v,n in [('overview','3- Safety dashboard.png'),('monitor','4- Live monitoring screen.png'),('video','5- Video analysis interface.png'),('image','6- Image analysis screen.png'),('zones','7- Restricted zones interface.png'),('incidents','8- Incident review screen.png'),('reports','9- Safety reports interface.png'),('models','10- AI models screen.png')]: go(base+'/?view='+v); shot(inter/n)
           go(base+'/?view=emergency'); driver.find_element(By.ID,'emergencyBtn').click(); wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR,'#emergencyStatus .success-card'))); shot(inter/'11- Emergency response interface.png')
           go(base+'/?view=profile'); shot(inter/'12- Supervisor profile.png')
           go(base+'/?view=zones'); driver.find_element(By.ID,'zoneName').clear(); driver.find_element(By.ID,'saveZone').click(); wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR,'#zoneError .alert-error'))); shot(err/'4- Missing required field test.png')
