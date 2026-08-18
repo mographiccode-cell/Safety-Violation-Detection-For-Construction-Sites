@@ -34,10 +34,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --target closure_runtime/site-packages --no-deps ultralytics ultralytics-thop
           python -m pip install --target closure_runtime/site-packages polars
-          cp ensemble_engine.py action_engine.py track_action_engine.py full_safety_engine.py closure_runtime/
+          cp ensemble_engine.py action_engine.py track_action_manager.py combined_pipeline.py closure_runtime/
           cp -r vendor/stgcn closure_runtime/vendor/
           cp models/ensemble_config.json closure_runtime/models/
           printf 'PYTHONPATH=%s/site-packages\n' '$CLOSURE_RUNTIME' > closure_runtime/README_RUNTIME.txt
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'closure_runtime/site-packages')
+          sys.path.insert(0, 'closure_runtime')
+          import ultralytics, ensemble_engine, action_engine, track_action_manager, combined_pipeline
+          print('portable runtime import OK', ultralytics.__version__)
+          PY
       - name: Upload portable runtime artifact
         uses: actions/upload-artifact@v4
         with:
