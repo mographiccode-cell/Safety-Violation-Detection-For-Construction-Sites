@@ -48,7 +48,7 @@ jobs:
 
       - name: Run safety and action unit tests
         run: |
-          pytest -q tests/test_ensemble_engine.py tests/test_action_engine.py
+          pytest -q tests/test_ensemble_engine.py tests/test_action_pipeline.py
 
       - name: Verify all five selected real model weights
         run: |
