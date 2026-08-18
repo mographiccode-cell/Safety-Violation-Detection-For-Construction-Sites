@@ -1,0 +1,48 @@
+name: Export Closure Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'closure-runtime-trigger.txt'
+      - '.github/workflows/export-closure-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build portable inference runtime
+        run: |
+          set -euxo pipefail
+          mkdir -p closure_runtime/site-packages closure_runtime/vendor closure_runtime/models
+          python -m pip install --upgrade pip
+          python -m pip install --target closure_runtime/site-packages --no-deps ultralytics ultralytics-thop
+          python -m pip install --target closure_runtime/site-packages polars
+          cp ensemble_engine.py action_engine.py track_action_engine.py full_safety_engine.py closure_runtime/
+          cp -r vendor/stgcn closure_runtime/vendor/
+          cp models/ensemble_config.json closure_runtime/models/
+          printf 'PYTHONPATH=%s/site-packages\n' '$CLOSURE_RUNTIME' > closure_runtime/README_RUNTIME.txt
+      - name: Upload portable runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-workplace-safety-closure-runtime
+          path: closure_runtime
+          retention-days: 1
+          compression-level: 6
+      - name: Publish runtime run id
+        run: |
+          printf '{"run_id":%s,"run_attempt":%s,"commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" > closure_runtime_export_run.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add closure_runtime_export_run.json
+          git commit -m 'ci: closure runtime artifact ready [skip ci]'
+          git pull --rebase || true
+          git push
