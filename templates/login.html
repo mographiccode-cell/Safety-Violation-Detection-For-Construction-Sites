@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>تسجيل الدخول | Smart Workplace Safety</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Arial,Tahoma,sans-serif;background:#07111f;color:#e8eef6;min-height:100vh;display:grid;place-items:center;padding:24px}.card{width:min(430px,100%);background:#0d1b2d;border:1px solid #1e334d;border-radius:24px;padding:30px;box-shadow:0 24px 70px #0008}.brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}.logo{width:46px;height:46px;border-radius:14px;background:#18a36b;display:grid;place-items:center;font-size:23px}.muted{color:#8fa4bb;font-size:13px}.field{margin:16px 0}label{display:block;margin-bottom:8px;font-size:14px}.input{width:100%;background:#081421;border:1px solid #243b55;color:white;border-radius:12px;padding:13px 14px;outline:none}.input:focus{border-color:#22c982}.btn{width:100%;border:0;border-radius:12px;background:#18a36b;color:white;font-weight:700;padding:13px;cursor:pointer;margin-top:8px}.error{background:#401b20;border:1px solid #8d3440;color:#ffc7cc;padding:10px;border-radius:10px;margin-bottom:14px}.demo{margin-top:18px;padding:12px;border-radius:12px;background:#091725;color:#9fb2c6;font-size:12px;line-height:1.8}</style>
+</head>
+<body>
+  <form class="card" method="post">
+    <div class="brand"><div class="logo">🛡️</div><div><b>Smart Workplace Safety</b><div class="muted">بوابة المشرف الآمنة</div></div></div>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <div class="field"><label>اسم المستخدم</label><input class="input" name="username" autocomplete="username" required></div>
+    <div class="field"><label>كلمة المرور</label><input class="input" type="password" name="password" autocomplete="current-password" required></div>
+    <button class="btn" type="submit">دخول النظام</button>
+    <div class="demo">بيانات العرض الافتراضية: <b>supervisor</b> / <b>Safety@2026!</b><br>في الإنتاج اضبط SUPERVISOR_USER وSUPERVISOR_PASSWORD وSECRET_KEY من متغيرات البيئة.</div>
+  </form>
+</body>
+</html>
