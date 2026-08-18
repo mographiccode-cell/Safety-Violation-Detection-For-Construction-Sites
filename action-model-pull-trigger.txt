@@ -1,1 +1,1 @@
-run direct real 30-frame TSSTG validation attempt 6
+run source-compatible real 30-frame TSSTG validation attempt 7
