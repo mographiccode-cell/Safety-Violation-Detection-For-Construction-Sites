@@ -1,0 +1,69 @@
+{
+  "model_tag": "yolo26n_ppe",
+  "model_path": "models/yolo26n_ppe.pt",
+  "image": "v2_worker_crop.jpg",
+  "status": "ok",
+  "names": {
+    "0": "helmet",
+    "1": "gloves",
+    "2": "vest",
+    "3": "boots",
+    "4": "goggles",
+    "5": "none",
+    "6": "Person",
+    "7": "no_helmet",
+    "8": "no_goggle",
+    "9": "no_gloves",
+    "10": "no_boots"
+  },
+  "detections": [
+    {
+      "class_id": 6,
+      "class_name": "Person",
+      "confidence": 0.51528,
+      "xyxy": [
+        30.019,
+        9.933,
+        249.759,
+        320.0
+      ]
+    },
+    {
+      "class_id": 0,
+      "class_name": "helmet",
+      "confidence": 0.434615,
+      "xyxy": [
+        84.791,
+        16.755,
+        143.55,
+        59.756
+      ]
+    },
+    {
+      "class_id": 1,
+      "class_name": "gloves",
+      "confidence": 0.19005,
+      "xyxy": [
+        187.168,
+        253.561,
+        240.982,
+        312.694
+      ]
+    },
+    {
+      "class_id": 1,
+      "class_name": "gloves",
+      "confidence": 0.173344,
+      "xyxy": [
+        187.424,
+        251.214,
+        240.733,
+        309.775
+      ]
+    }
+  ],
+  "image_shape": [
+    320,
+    276
+  ]
+}
